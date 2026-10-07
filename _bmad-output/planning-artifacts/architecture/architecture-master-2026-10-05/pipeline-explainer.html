@@ -1,0 +1,218 @@
+<title>CSI Sensing Study Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column (~68ch), with the pipeline strip and tables allowed to run wider */
+:root {
+  --bg: #f5f7f8;
+  --surface: #ffffff;
+  --ink: #15232b;
+  --muted: #55656e;
+  --line: #d5dee2;
+  --accent: #0e6f73;
+  --accent-soft: #dcefef;
+  --warn: #9a5a12;
+  --warn-soft: #f6ead9;
+  --train: #0e6f73;
+  --val: #6a8f3a;
+  --test: #b5562b;
+  --gap: #c9d3d7;
+  --display: "Newsreader", Georgia, "Times New Roman", serif;
+  --body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10181c; --surface: #172227; --ink: #e3ebee; --muted: #9aaab2; --line: #2c3b42;
+    --accent: #5cc2c0; --accent-soft: #173336; --warn: #e2a65c; --warn-soft: #33281a;
+    --train: #5cc2c0; --val: #a6c972; --test: #e8875a; --gap: #3a4a51;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10181c; --surface: #172227; --ink: #e3ebee; --muted: #9aaab2; --line: #2c3b42;
+  --accent: #5cc2c0; --accent-soft: #173336; --warn: #e2a65c; --warn-soft: #33281a;
+  --train: #5cc2c0; --val: #a6c972; --test: #e8875a; --gap: #3a4a51;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.6; padding-inline: 20px; padding-block: 40px 64px; }
+main { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 48px; }
+.prose { max-width: 68ch; }
+h1, h2 { font-family: var(--display); font-weight: 600; text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: clamp(1.9rem, 4.5vw, 2.6rem); }
+h2 { font-size: 1.55rem; }
+h3 { font-size: 1rem; margin: 0; font-weight: 600; }
+p { margin: 0; }
+section { display: flex; flex-direction: column; gap: 16px; }
+.eyebrow { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.lede { font-size: 1.12rem; color: var(--muted); max-width: 62ch; }
+header { display: flex; flex-direction: column; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 28px; }
+.meta { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
+
+/* pipeline strip */
+.pipeline { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; counter-reset: step; }
+.stage { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; counter-increment: step; }
+.stage::before { content: counter(step); font-family: var(--mono); font-size: 0.75rem; color: var(--accent); }
+.stage h3 { font-size: 0.98rem; }
+.stage p { font-size: 0.86rem; color: var(--muted); line-height: 1.45; }
+.stage.model { border-color: var(--accent); background: var(--accent-soft); }
+
+/* timeline */
+.timeline { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.rec { display: grid; grid-template-columns: 130px 1fr; gap: 12px; align-items: center; }
+.rec-label { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); overflow-wrap: anywhere; }
+.bar { display: flex; height: 22px; border-radius: 3px; overflow: hidden; }
+.bar span { display: block; height: 100%; }
+.b-train { background: var(--train); }
+.b-val { background: var(--val); }
+.b-test { background: var(--test); }
+.b-gap { background: repeating-linear-gradient(45deg, var(--gap) 0 4px, transparent 4px 8px); }
+.b-rand { background: repeating-linear-gradient(90deg, var(--train) 0 6px, var(--test) 6px 8px, var(--train) 8px 15px, var(--test) 15px 17px); }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.82rem; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+
+/* tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.empty { color: var(--muted); font-family: var(--mono); }
+.tag { display: inline-block; font-family: var(--mono); font-size: 0.72rem; padding: 1px 7px; border-radius: 3px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.tag.ref { background: var(--warn-soft); color: var(--warn); }
+.caption { font-size: 0.82rem; color: var(--muted); }
+
+/* fairness rules */
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.rule { border-top: 2px solid var(--accent); padding-top: 10px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rule p { font-size: 0.92rem; color: var(--muted); }
+
+/* questions */
+.questions { display: flex; flex-direction: column; gap: 0; background: var(--warn-soft); border-radius: 6px; padding: 6px 18px; }
+.q { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.q:last-child { border-bottom: 0; }
+.q p { font-size: 0.9rem; color: var(--muted); }
+.q h3 { color: var(--ink); }
+
+@media (max-width: 520px) {
+  .rec { grid-template-columns: 1fr; gap: 4px; }
+}
+</style>
+
+<main>
+  <header>
+    <span class="eyebrow">MSc thesis · study design</span>
+    <h1>Do pretrained deep models beat classical ML at recognising activities from WiFi CSI?</h1>
+    <p class="lede">This page sets out how the experiments will run: what goes in, how each method is scored, and how we keep the comparison fair. Nothing has been measured yet, so there are no results here.</p>
+    <span class="meta">Own dataset: 19 recordings · 2 rooms · 4 classes (empty, sitting, standing, walking) · ~63k packets · 4 antennas × 234 subcarriers</span>
+  </header>
+
+  <section>
+    <span class="eyebrow">The pipeline</span>
+    <h2>From a recording to a score</h2>
+    <p class="prose">Every method goes through the same steps. Only step 5 changes from method to method. That makes any difference in the final table come from the model, not from how the data was handled.</p>
+    <div class="pipeline">
+      <div class="stage"><h3>Load recordings</h3><p>The saved CSI files, each labelled with room and activity.</p></div>
+      <div class="stage"><h3>Split by time</h3><p>Each recording is cut into training, validation and test stretches, separated by a gap.</p></div>
+      <div class="stage"><h3>Clean the signal</h3><p>Rescale the amplitude and optionally remove the hardware phase offset. We try several variants.</p></div>
+      <div class="stage"><h3>Cut into windows</h3><p>Short runs of consecutive packets, e.g. 40 packets ≈ 8 s. Every method gets the same windows.</p></div>
+      <div class="stage model"><h3>Model summarises</h3><p>A pretrained model (kept frozen) or a set of classical signal features turns each window into numbers. Optionally, the best features are selected.</p></div>
+      <div class="stage"><h3>Simple classifier</h3><p>SVM, KNN, random forest, logistic regression or a small neural net, trained on those numbers.</p></div>
+      <div class="stage"><h3>Score</h3><p>Accuracy, macro-F1 and a confusion matrix on the test stretches.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">The split</span>
+    <h2>Why we split by time instead of at random</h2>
+    <p class="prose">Neighbouring windows overlap almost completely. With a 40-packet window moving one packet at a time, two neighbours share 39 of their 40 packets. If windows are assigned to train and test at random, the test set ends up full of near-copies of training windows, and accuracy looks higher than it really is. We therefore keep training and test in separate stretches of each recording, with a gap between them that no window can cross.</p>
+    <div class="timeline" role="img" aria-label="Two recordings: one split at random into interleaved train and test windows, one split into contiguous train, validation and test blocks separated by gaps">
+      <div class="rec"><span class="rec-label">random split</span><div class="bar"><span class="b-rand" style="width:100%"></span></div></div>
+      <div class="rec"><span class="rec-label">time-block split</span><div class="bar"><span class="b-train" style="width:56%"></span><span class="b-gap" style="width:4%"></span><span class="b-val" style="width:14%"></span><span class="b-gap" style="width:4%"></span><span class="b-test" style="width:22%"></span></div></div>
+      <div class="legend"><span><i class="b-train"></i>train</span><span><i class="b-val"></i>validation (for tuning)</span><span><i class="b-test"></i>test (scored once)</span><span><i class="b-gap"></i>gap, 64 packets</span></div>
+    </div>
+    <p class="prose">We will also rerun the dataset paper's own method under both splits. The random split reproduces the published figures, and the time-block split shows how much they change when leakage is removed. That difference is a result in itself.</p>
+  </section>
+
+  <section>
+    <span class="eyebrow">Fairness</span>
+    <h2>Rules every method follows</h2>
+    <div class="rules">
+      <div class="rule"><h3>Same data</h3><p>Identical split, windows and recordings for every method.</p></div>
+      <div class="rule"><h3>Same classifier</h3><p>The same small classifiers are trained on top of every model's output.</p></div>
+      <div class="rule"><h3>Frozen models</h3><p>All pretrained models are used exactly as released, with no further training. Fine-tuning comes in the next phase.</p></div>
+      <div class="rule"><h3>Tune on validation only</h3><p>Settings, and the best variant of each method, are chosen on validation. The test stretches are scored once, at the end.</p></div>
+      <div class="rule"><h3>Repeated runs</h3><p>Each result is the mean ± standard deviation over several random seeds.</p></div>
+      <div class="rule"><h3>Reproducible</h3><p>Every number in the table is saved with its exact settings and can be regenerated with one command.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Methods</span>
+    <h2>What is compared</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Method</th><th>What it is</th><th>What it sees</th></tr></thead>
+        <tbody>
+          <tr><td><strong>LWM v1.1</strong></td><td>Large Wireless Model, pretrained on simulated outdoor channels (wi-lab)</td><td>One packet at a time; the results are averaged over the window</td></tr>
+          <tr><td><strong>WavesFM</strong></td><td>Wireless foundation model, includes a WiFi activity task</td><td>The window as a time × subcarrier image</td></tr>
+          <tr><td><strong>Mantis-8M</strong></td><td>General time-series model</td><td>Subcarrier amplitudes over the window</td></tr>
+          <tr><td><strong>ImageNet vision model</strong></td><td>Standard image model, a common transfer-learning baseline</td><td>The window as an image</td></tr>
+          <tr><td><strong>Classical ML</strong></td><td>Signal features (mean power, standard deviation, flatness, distance, the paper's beamforming features) with feature selection</td><td>Hand-designed features per window, all of them or a selected subset</td></tr>
+          <tr><td><strong>Paper method</strong> <span class="tag ref">reference</span></td><td>Beamforming features + random forest from the dataset paper</td><td>Antennas 0 and 1, recomputed from the saved CSI</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Variations</span>
+    <h2>What is varied in the experiments</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Factor</th><th>Values</th></tr></thead>
+        <tbody>
+          <tr><td>Room setting</td><td>Room 1 · Room 2 · both rooms mixed</td></tr>
+          <tr><td>Antennas</td><td>2 (antennas 0 and 1, as in the paper) · all 4</td></tr>
+          <tr><td>Signal cleaning (LWM)</td><td>Global rescale · per-packet power · either one plus phase correction · amplitude only</td></tr>
+          <tr><td>Window length</td><td class="num">1 · 10 · 30 · 40 · 50 packets</td></tr>
+          <tr><td>Classical features</td><td>All features · manual subsets · automatic selection (MRMR), with how stable the chosen set is across rooms</td></tr>
+          <tr><td>Classifier</td><td>SVM · KNN · random forest · logistic regression · small neural net</td></tr>
+          <tr><td>How LWM packets are combined</td><td>Average only · average plus spread (the spread shows how much the signal moves, which helps separate walking from standing)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Output</span>
+    <h2>The table you will receive</h2>
+    <p class="prose">One row per method and one column per room setting. Each cell shows test macro-F1 and accuracy for the method's best variant, chosen on validation. A separate table lists every variant for the appendix. The paper's published numbers sit alongside for reference.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Method</th><th>Room 1</th><th>Room 2</th><th>Mixed</th></tr></thead>
+        <tbody>
+          <tr><td>LWM v1.1</td><td class="empty">to be measured</td><td class="empty">to be measured</td><td class="empty">to be measured</td></tr>
+          <tr><td>WavesFM · Mantis · ImageNet · Classical</td><td class="empty">to be measured</td><td class="empty">to be measured</td><td class="empty">to be measured</td></tr>
+          <tr><td>Paper method, time-block split</td><td class="empty">to be measured</td><td class="empty">to be measured</td><td class="empty">to be measured</td></tr>
+          <tr><td>Paper method, random split <span class="tag ref">reference</span></td><td class="empty">to be measured</td><td class="empty">to be measured</td><td class="empty">to be measured</td></tr>
+          <tr><td>Published (PIMRC 2025, random split, W2 = 40) <span class="tag ref">reference</span></td><td class="num">99.41%</td><td class="num">99.59%</td><td class="num">97.37%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">Layout only. Apart from the published row, no numbers exist yet.</p>
+  </section>
+
+  <section>
+    <span class="eyebrow">Open points</span>
+    <h2>What we need from you</h2>
+    <div class="questions">
+      <div class="q"><h3>Is the time-block split acceptable?</h3><p>Training, validation and test stretches within each recording, separated by a 64-packet gap (about 13 s at 5 packets/s). Is this the right primary protocol for the thesis?</p></div>
+      <div class="q"><h3>Do the saved recordings share one sample rate?</h3><p>Some files were downsampled before saving (by 2, 3 or 5). If their final rates differ, the model might learn the rate rather than the activity, so we would add a check with equalised rates.</p></div>
+      <div class="q"><h3>Data cleaning</h3><p>Which cleaning steps should be applied, if any (e.g. removing outlier or noisy packets)? Each one becomes an option that can be switched on per experiment.</p></div>
+    </div>
+  </section>
+</main>
