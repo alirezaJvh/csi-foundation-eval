@@ -1,0 +1,98 @@
+[project]
+name = "csi_bench"
+version = "0.1.0"
+description = "CSI benchmark for comparing feature extractors on identical splits"
+requires-python = "==3.12.*"
+dependencies = [
+    "torch==2.14.1",
+    "torchvision==0.29.1",
+    "numpy==2.5.3",
+    "scikit-learn==1.9.1",
+    "pandas==3.0.6",
+    "pyarrow==25.0.1",
+    "pydantic==2.13.5",
+    "PyYAML==6.0.3",
+    "huggingface-hub==2.1.1",
+    "timm==1.0.30",
+    "mantis-tsfm==1.1.0",
+    "mrmr-selection==0.2.8",
+]
+
+[dependency-groups]
+dev = [
+    "ruff==0.16.10",
+    "ty==0.0.84",
+    "import-linter==2.15",
+    "pytest==9.1.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/csi_bench"]
+
+[tool.uv]
+required-version = ">=0.11"
+override-dependencies = ["pandas==3.0.6"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["**/_vendor", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "T20"]
+
+[tool.ty.src]
+include = ["src", "tests"]
+exclude = ["**/_vendor/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.importlinter]
+root_package = "csi_bench"
+
+[[tool.importlinter.contracts]]
+name = "core imports nothing internal"
+type = "forbidden"
+source_modules = ["csi_bench.core"]
+forbidden_modules = [
+    "csi_bench.adapters",
+    "csi_bench.config",
+    "csi_bench.runner",
+    "csi_bench.results_api",
+]
+
+[[tool.importlinter.contracts]]
+name = "adapters import only core"
+type = "forbidden"
+source_modules = ["csi_bench.adapters"]
+forbidden_modules = [
+    "csi_bench.config",
+    "csi_bench.runner",
+    "csi_bench.results_api",
+]
+
+[[tool.importlinter.contracts]]
+name = "adapters never import each other"
+type = "independence"
+modules = ["csi_bench.adapters.*.*"]
+
+[[tool.importlinter.contracts]]
+name = "only runner imports adapters"
+type = "forbidden"
+source_modules = ["csi_bench.core", "csi_bench.config", "csi_bench.results_api"]
+forbidden_modules = ["csi_bench.adapters"]

@@ -35,3 +35,4 @@ papers/
 # BMad tooling (installed framework and skills)
 _bmad/
 .claude/skills/
+.cache/
