@@ -23,3 +23,16 @@ class Recording:
     room: str
     label: int
     meta: RecordingMeta
+
+
+@dataclass(frozen=True)
+class SplitPlan:
+    """Committed train/val/test packet blocks per recording (0-based, end-exclusive)."""
+
+    dataset: str
+    splitter: str
+    params: dict
+    gap_packets: int
+    blocks: dict[str, dict[str, tuple[int, int]]]
+    source_sha256: dict[str, str]
+    split_hash: str

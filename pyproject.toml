@@ -18,6 +18,9 @@ dependencies = [
     "mrmr-selection==0.2.8",
 ]
 
+[project.scripts]
+csi-bench = "csi_bench.runner.cli:main"
+
 [dependency-groups]
 dev = [
     "ruff==0.16.10",
