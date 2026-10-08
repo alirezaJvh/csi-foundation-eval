@@ -40,6 +40,16 @@ def names(stage: str) -> list[str]:
     return sorted(n for s, n in _REGISTRY if s == stage)
 
 
+def affecting_params(params: BaseModel) -> dict[str, Any]:
+    """JSON params except those fields marked `affects_result=False` (AD-5)."""
+    dumped = params.model_dump(mode="json")
+    for name, field in type(params).model_fields.items():
+        extra = field.json_schema_extra
+        if isinstance(extra, dict) and extra.get("affects_result") is False:
+            dumped.pop(name, None)
+    return dumped
+
+
 def reset() -> None:
     """Clear all registrations (for tests)."""
     _REGISTRY.clear()

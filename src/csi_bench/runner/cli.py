@@ -16,6 +16,7 @@ from csi_bench.core.errors import ConfigError, DataError
 from csi_bench.core.results_schema import DATASET_TABLE_SCHEMA, SCOPES, dataset_table_path
 from csi_bench.core.splitplan import PARTS, load_split_plan
 from csi_bench.runner.discover import discover
+from csi_bench.runner.run import run
 
 _COUNTS = ("n_packets", *PARTS)
 _SCOPE_RECORDING, _SCOPE_CLASS, _SCOPE_ROOM, _SCOPE_TOTAL = SCOPES
@@ -128,10 +129,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     d = sub.add_parser("describe", help="print class balance and packet counts of a dataset")
     d.add_argument("dataset")
     d.add_argument("--split", help="split hash to use when several plans exist")
+    r = sub.add_parser("run", help="run one experiment config and store its result")
+    r.add_argument("config", help="path to an ExperimentConfig YAML file")
     try:
         args = parser.parse_args(argv)
     except SystemExit as e:
         return e.code if isinstance(e.code, int) else 2
+    if args.command == "run":
+        return run(args.config)
     return describe(args.dataset, args.split)
 
 

@@ -1,0 +1,8 @@
+dataset: tor_vergata
+selection: {rooms: [r1]}
+window_len: 40
+stride: 1
+extractors: [{name: amplitude_stats}]
+head: {name: logreg}
+seeds: [0]
+role: comparison
