@@ -1,12 +1,12 @@
 """Logistic-regression head, tuned on val and refit on train ∪ val (AD-11)."""
 
 import numpy as np
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, PositiveFloat
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import f1_score
 from sklearn.preprocessing import StandardScaler
 
 from csi_bench.core.contracts import FeatureMatrix
+from csi_bench.core.head_search import tune_and_refit
 from csi_bench.core.registry import register
 
 
@@ -15,8 +15,10 @@ class LogReg:
     VERSION = 1
 
     class Params(BaseModel):
-        C_grid: tuple[float, ...] = (0.01, 0.1, 1.0, 10.0)
-        max_iter: int = 1000
+        model_config = ConfigDict(extra="forbid")
+
+        C_grid: tuple[PositiveFloat, ...] = Field(default=(0.01, 0.1, 1.0, 10.0), min_length=1)
+        max_iter: int = Field(default=1000, ge=1)
 
     def __init__(self, params: "LogReg.Params | None" = None, seed: int = 0) -> None:
         self.params = params or self.Params()
@@ -34,19 +36,8 @@ class LogReg:
         val: FeatureMatrix,
         y_val: np.ndarray,
     ) -> None:
-        scaler = StandardScaler().fit(train.values)
-        x_train = scaler.transform(train.values)
-        x_val = scaler.transform(val.values)
-        best_c, best_f1 = self.params.C_grid[0], -1.0
-        for c in self.params.C_grid:
-            model = self._make(c).fit(x_train, y_train)
-            score = float(f1_score(y_val, model.predict(x_val), average="macro", zero_division=0))
-            if score > best_f1:
-                best_c, best_f1 = c, score
-        self._scaler = scaler
-        x_all = np.vstack([x_train, x_val])
-        y_all = np.concatenate([y_train, y_val])
-        self._model = self._make(best_c).fit(x_all, y_all)
+        candidates = [lambda c=c: self._make(c) for c in self.params.C_grid]
+        self._scaler, self._model, _ = tune_and_refit(candidates, train, y_train, val, y_val)
 
     def predict(self, features: FeatureMatrix) -> np.ndarray:
         assert self._scaler is not None and self._model is not None, "fit before predict"

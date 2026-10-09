@@ -113,3 +113,117 @@ def test_run_id_excludes_affects_result_false(tmp_path):
     other = _load(tmp_path, head={"name": "fake", "params": {"c": 2.0, "threads": 1}})
     assert compute_run_id(same_a) == compute_run_id(same_b)
     assert compute_run_id(same_a) != compute_run_id(other)
+
+
+@pytest.mark.parametrize(
+    ("changes", "field"),
+    [
+        ({"window_len": 0}, "window_len"),
+        ({"stride": 0}, "stride"),
+        ({"extractors": []}, "extractors"),
+        ({"seeds": []}, "seeds"),
+        ({"seeds": [1, 1]}, "seeds"),
+        ({"selection": {"rooms": []}}, "rooms"),
+        ({"dataset": "nope"}, "dataset"),
+        ({"head": {"name": "logreg", "params": {"C_grd": [1]}}}, "head.params"),
+        (
+            {"extractors": [{"name": "amplitude_stats", "params": {"unknown": 1}}]},
+            "extractors.0.params",
+        ),
+        (
+            {"extractors": [{"name": "amplitude_stats"}, {"name": "amplitude_stats"}]},
+            "extractors",
+        ),
+    ],
+)
+def test_invalid_fields_name_the_field(tmp_path, changes, field):
+    with pytest.raises(ConfigError, match=field):
+        _load(tmp_path, **changes)
+
+
+def test_run_id_follows_the_split_plan(tmp_path):
+    config = _load(tmp_path)
+    only_a = tmp_path / "a"
+    only_b = tmp_path / "b"
+    for root, name in ((only_a, "aaaaaaaaaaaa"), (only_b, "bbbbbbbbbbbb")):
+        (root / "tor_vergata").mkdir(parents=True)
+        (root / "tor_vergata" / f"{name}.json").write_text("{}")
+    assert compute_run_id(config, only_a) != compute_run_id(config, only_b)
+
+
+def _steps(config):
+    return [(s.name, s.params) for s in config.preprocessing]
+
+
+def test_preprocessing_default_empty(tmp_path):
+    assert _load(tmp_path).preprocessing == []
+
+
+def test_preprocessing_shorthand_and_explicit(tmp_path):
+    config = _load(
+        tmp_path,
+        preprocessing=[
+            {"antennas": [0, 1]},
+            {"global_rescale": {}},
+            {"name": "recording_mean_norm", "params": {}},
+        ],
+    )
+    assert _steps(config) == [
+        ("antennas", {"ids": [0, 1]}),
+        ("global_rescale", {}),
+        ("recording_mean_norm", {}),
+    ]
+
+
+def test_preset_equals_written_out(tmp_path):
+    preset = _load(tmp_path, preprocessing=["ant2_rescale"])
+    explicit = _load(tmp_path, preprocessing=[{"antennas": [0, 1]}, {"global_rescale": {}}])
+    assert _steps(preset) == _steps(explicit)
+    assert compute_run_id(preset) == compute_run_id(explicit)
+
+
+def test_chain_order_changes_run_id(tmp_path):
+    a = _load(tmp_path, preprocessing=[{"antennas": [0, 1]}, {"global_rescale": {}}])
+    b = _load(tmp_path, preprocessing=[{"global_rescale": {}}, {"antennas": [0, 1]}])
+    assert compute_run_id(a) != compute_run_id(b)
+    assert compute_run_id(a) != compute_run_id(_load(tmp_path))
+
+
+def test_saved_config_holds_explicit_steps(tmp_path):
+    config = _load(tmp_path, preprocessing=["ant2"])
+    saved = save_config(config, tmp_path / "out" / "config.yaml")
+    assert yaml.safe_load(saved.read_text())["preprocessing"] == [
+        {"name": "antennas", "params": {"ids": [0, 1]}}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("entry", "match"),
+    [
+        ("nope", r"preprocessing\.0"),
+        ({"bogus": {}}, r"preprocessing\.0"),
+        ({"antennas": {"wrong": 1}}, r"preprocessing\.0"),
+        ({"antennas": []}, r"preprocessing\.0"),
+    ],
+)
+def test_bad_preprocessing_names_path(tmp_path, entry, match):
+    with pytest.raises(ConfigError, match=match):
+        _load(tmp_path, preprocessing=[entry])
+
+
+def test_fit_scope_whole_recording_needs_reference(tmp_path):
+    step = {"recording_mean_norm": {"fit_scope": "whole_recording"}}
+    assert _load(tmp_path, preprocessing=[step], role="reference")
+    with pytest.raises(ConfigError, match=r"preprocessing\.0\.params\.fit_scope"):
+        _load(tmp_path, preprocessing=[step], role="comparison")
+
+
+def test_window_shorter_than_extractor_minimum_is_rejected(tmp_path):
+    with pytest.raises(
+        ConfigError, match=r"extractors\.1\.name: window_len 17 < min_window_len 18"
+    ):
+        _load(
+            tmp_path,
+            window_len=17,
+            extractors=[{"name": "amplitude_stats"}, {"name": "paper_beamforming"}],
+        )

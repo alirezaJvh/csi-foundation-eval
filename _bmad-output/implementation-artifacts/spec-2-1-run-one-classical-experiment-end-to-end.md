@@ -108,3 +108,25 @@ The Windower is a core function (not an adapter) because AD-7 gives window bound
 **Commands:**
 - `uv run ruff check src tests && uv run ruff format --check src tests && uv run ty check && uv run lint-imports && uv run pytest` -- expected: all pass
 - `uv run csi-bench run experiments/r1_amplitude_stats_logreg.yaml` -- expected: `runs/<run_id>/` complete, exit 0
+
+### Review Findings
+
+- [x] [Review][Patch] Refit the head's scaler on train ∪ val for the final model (keep the train-only scaler for the C search) and pin it with a test that `_scaler.mean_` equals the train ∪ val mean — decided by user [src/csi_bench/adapters/heads/logreg.py:42-52]
+- [x] [Review][Patch] Config validation is too weak and partly late: `window_len`/`stride` unbounded, `extractors`/`seeds`/`selection.rooms` may be empty or duplicated, `dataset` is not checked against the registry (failure leaves a `failed` run dir), adapter `Params` accept unknown keys (typo `C_grd` silently ignored), `C_grid` may be empty. Add `Field(ge=1/min_length)`, `extra="forbid"` on Params, dataset check in `validate_registry`; after load, raise `ConfigError` for unknown rooms / zero windows / an empty train, val or test part [src/csi_bench/config/experiment.py:35-45, src/csi_bench/runner/run.py:_execute]
+- [x] [Review][Patch] `run_id` omits the dataset adapter `VERSION` and hashes `split: null` as null, so swapping the committed plan reuses the same `run_id` for different results; include dataset VERSION and the resolved split hash [src/csi_bench/config/experiment.py:resolved_body]
+- [x] [Review][Patch] No tests for `metrics_document`/`_mean_std` (multi-seed), `collect_provenance` (commit, dirty, diff via monkeypatched `_git`), or that `load()` is never called for an invalid config [tests/test_run.py]
+- [x] [Review][Patch] `status.json` `started_at` is rewritten with a fresh `_now()` at every transition (including `done`); `PARTS` duplicates `core.splitplan.PARTS`; `logger` unused; `_find_split` error tells `run` users to use `--split` which `run` lacks [src/csi_bench/runner/run.py]
+- [x] [Review][Defer] Rerun semantics: a rerun overwrites a `done` run's status/metrics, leaves stale `seeds/<n>/`, has no lock, and `KeyboardInterrupt` leaves `status=running` — deferred: AD-14 resumability/`--force` belongs to story 2.7
+- [x] [Review][Defer] `_validate_extractors` (`min_window_len`, `n_antennas`) branches are untested — deferred: unreachable until a second extractor lands
+
+#### Rejected
+
+- `low` — constant-column/finite check spans val and test (blind, auditor): spec/AD-8 mandate the check without scope; it only fails runs, never feeds the model.
+- `low` — provenance `git status` counts untracked files, diff omits them, CWD-dependent, no adapter versions, only written on success (blind, edge): `runs/` and `.cache/` are git-ignored; remaining points are minor and the fix adds branches.
+- `low` — `results_schema.py` lacks status/provenance schemas, `STATUS_STATES` unused (auditor): developer-only; moving payload builders is more than a direct correction.
+- `low` — `Head.fit(train, y_train, val, y_val)` differs from `fit(train, val)` (auditor): labels must come from somewhere; reasonable.
+- `low` — rooms order changes hash, population std, `assert` in `predict`, feature slices held in memory, duplicate feature names, flatness `-inf` on zero power, single-class train error text (blind, edge): negligible at current scope; later stories add batching.
+- `false` — `plan.blocks[rec.recording_id]` can raise `KeyError` (edge): `load_split_plan` already requires blocks and recordings to match.
+- `false` — `StopIteration` in `metrics_document` (edge): needs empty `seeds`, which patch 1 forbids.
+- `false` — `provenance.dirty` always true because `runs/` is untracked (auditor): `runs/` is in `.gitignore`.
+- Spec/sprint bookkeeping (`last_updated` moved backwards, `baseline_commit`, empty log sections, `window_len = 1` wording): fix would edit the spec or tracking files, not code.

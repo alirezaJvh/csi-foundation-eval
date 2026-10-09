@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 
 import numpy as np
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from csi_bench.core.contracts import FeatureMatrix
 from csi_bench.core.errors import ExtractorError
@@ -34,7 +34,7 @@ class AmplitudeStats:
     min_window_len = 1
 
     class Params(BaseModel):
-        pass
+        model_config = ConfigDict(extra="forbid")
 
     def __init__(self, params: "AmplitudeStats.Params | None" = None) -> None:
         self.params = params or self.Params()

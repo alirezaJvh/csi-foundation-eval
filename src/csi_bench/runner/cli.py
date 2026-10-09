@@ -3,7 +3,6 @@
 import argparse
 import sys
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
@@ -14,29 +13,12 @@ from csi_bench.core import registry
 from csi_bench.core.contracts import Recording, SplitPlan
 from csi_bench.core.errors import ConfigError, DataError
 from csi_bench.core.results_schema import DATASET_TABLE_SCHEMA, SCOPES, dataset_table_path
-from csi_bench.core.splitplan import PARTS, load_split_plan
+from csi_bench.core.splitplan import PARTS, find_split, load_split_plan
 from csi_bench.runner.discover import discover
 from csi_bench.runner.run import run
 
 _COUNTS = ("n_packets", *PARTS)
 _SCOPE_RECORDING, _SCOPE_CLASS, _SCOPE_ROOM, _SCOPE_TOTAL = SCOPES
-
-
-def _find_split(dataset: str, split: str | None, root: str | Path = "splits") -> Path:
-    folder = Path(root) / dataset
-    files = sorted(folder.glob("*.json")) if folder.is_dir() else []
-    if split is not None:
-        for f in files:
-            if f.stem == split:
-                return f
-        known = ", ".join(f.stem for f in files) or "none"
-        raise DataError(f"no split {split} for {dataset} in {folder} (known: {known})")
-    if not files:
-        raise DataError(f"no split plan found in {folder}; generate one first")
-    if len(files) > 1:
-        hashes = ", ".join(f.stem for f in files)
-        raise DataError(f"several split plans in {folder} ({hashes}); choose one with --split")
-    return files[0]
 
 
 def build_table(
@@ -104,7 +86,7 @@ def describe(dataset: str, split: str | None = None) -> int:
         return 2
     try:
         cls: Any = source_cls
-        split_path = _find_split(dataset, split)
+        split_path = find_split(dataset, split, hint="choose one with --split")
         source = cls(cls.Params())
         recordings = source.load()
         plan = load_split_plan(split_path, recordings)

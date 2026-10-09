@@ -59,3 +59,24 @@ def test_registered_via_discovery(monkeypatch):
         monkeypatch.delitem(sys.modules, name)
     discover()
     assert registry.get("head", "logreg").__name__ == "LogReg"
+
+
+def test_final_scaler_is_fitted_on_train_and_val():
+    train, y_train = _part(60, 0)
+    val, y_val = _part(30, 1, scale=3.0)
+    head = LogReg(seed=0)
+    head.fit(train, y_train, val, y_val)
+    both = np.vstack([train.values, val.values])
+    scaler = head._scaler
+    assert scaler is not None and scaler.mean_ is not None
+    assert np.allclose(scaler.mean_, both.mean(axis=0), rtol=1e-5)
+
+
+def test_params_reject_unknown_and_empty_grid():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        LogReg.Params(C_grd=(1.0,))  # ty: ignore[unknown-argument]
+    with pytest.raises(ValidationError):
+        LogReg.Params(C_grid=())

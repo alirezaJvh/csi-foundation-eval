@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-07-2026 09:00
-last_updated: 10-08-2026 11:03
+last_updated: 10-08-2026 18:30
 project: master
 project_key: NOKEY
 tracking_system: file-system
@@ -43,11 +43,11 @@ development_status:
   epic-1-retrospective: optional
 
   epic-2: in-progress
-  2-1-run-one-classical-experiment-end-to-end: review
-  2-2-preprocessing-chain-with-antenna-selection-and-global-rescal: backlog
-  2-3-full-classifier-family-with-seeds: backlog
-  2-4-runner-owned-feature-cache: backlog
-  2-5-paper-beamforming-feature-family: backlog
+  2-1-run-one-classical-experiment-end-to-end: done
+  2-2-preprocessing-chain-with-antenna-selection-and-global-rescal: done
+  2-3-full-classifier-family-with-seeds: done
+  2-4-runner-owned-feature-cache: done
+  2-5-paper-beamforming-feature-family: review
   2-6-feature-selection-manual-subsets-and-mrmr: backlog
   2-7-sweeps-and-the-python-experiment-builder: backlog
   2-8-comparison-report-and-notebook-results-api: backlog

@@ -54,3 +54,29 @@ class Head(Protocol):
     def predict(self, features: FeatureMatrix) -> np.ndarray:
         """Return predicted integer labels, row-aligned to the features."""
         ...
+
+
+class FeatureCache(Protocol):
+    """Runner-owned store of one extractor's matrix over all windows (AD-10)."""
+
+    def get(self, key: str, window_ids: Sequence[str] | None = None) -> FeatureMatrix | None:
+        """Return the cached matrix; a corrupt entry or one whose windows differ is a miss."""
+        ...
+
+    def put(self, key: str, matrix: FeatureMatrix, window_ids: Sequence[str]) -> None:
+        """Store atomically; a failed write leaves no entry."""
+        ...
+
+
+class PreprocessStep(Protocol):
+    """Fitted preprocessing step: `fit` sees train blocks only, `transform` is pure."""
+
+    VERSION: int
+
+    def fit(self, recordings: Sequence[Recording]) -> dict:
+        """Return JSON-able fitted state from (train-block views of) the recordings."""
+        ...
+
+    def transform(self, recording: Recording, state: dict) -> Recording:
+        """Return a new `Recording` using the fitted state; never mutate the input."""
+        ...

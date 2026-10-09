@@ -17,6 +17,29 @@ def compute_split_hash(plan: SplitPlan) -> str:
     return short_hash(body)
 
 
+def find_split(
+    dataset: str,
+    split: str | None = None,
+    root: str | Path = "splits",
+    hint: str = "set `split:` in the config",
+) -> Path:
+    """Path of the committed plan: the one for `split`, or the only plan of the dataset."""
+    folder = Path(root) / dataset
+    files = sorted(folder.glob("*.json")) if folder.is_dir() else []
+    if split is not None:
+        for f in files:
+            if f.stem == split:
+                return f
+        known = ", ".join(f.stem for f in files) or "none"
+        raise DataError(f"no split {split} for {dataset} in {folder} (known: {known})")
+    if not files:
+        raise DataError(f"no split plan found in {folder}; generate one first")
+    if len(files) > 1:
+        hashes = ", ".join(f.stem for f in files)
+        raise DataError(f"several split plans in {folder} ({hashes}); {hint}")
+    return files[0]
+
+
 def write_split_plan(plan: SplitPlan, root: str | Path = "splits") -> Path:
     """Write the plan to `<root>/<dataset>/<split_hash>.json` and return the path."""
     path = Path(root) / plan.dataset / f"{plan.split_hash}.json"

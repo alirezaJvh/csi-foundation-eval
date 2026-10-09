@@ -4,24 +4,25 @@ The config is the single construction path: it is validated (types, registry nam
 and adapter params) before any dataset is loaded. This module imports only `core`.
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from csi_bench.config.presets import PREPROCESS_PRESETS
 from csi_bench.core import registry
 from csi_bench.core.errors import ConfigError
-from csi_bench.core.hashing import short_hash
-
-STAGES = ("extractor", "head")
+from csi_bench.core.hashing import sha256_hex, short_hash
+from csi_bench.core.splitplan import find_split
 
 
 class Selection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    rooms: list[str]
+    rooms: list[str] = Field(min_length=1)
 
 
 class AdapterSpec(BaseModel):
@@ -31,18 +32,70 @@ class AdapterSpec(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+def _expand_preprocessing(raw: Any) -> Any:
+    """Normalize shorthand and preset entries to explicit `{name, params}` mappings."""
+    if not isinstance(raw, list):
+        return raw
+    out: list[Any] = []
+    for i, entry in enumerate(raw):
+        where = f"preprocessing.{i}"
+        if isinstance(entry, str):
+            if entry not in PREPROCESS_PRESETS:
+                known = ", ".join(sorted(PREPROCESS_PRESETS))
+                raise ValueError(f"{where}: unknown preset {entry!r}; presets: {known}")
+            for step in PREPROCESS_PRESETS[entry]:
+                out.append({"name": step["name"], "params": deepcopy(step["params"])})
+        elif isinstance(entry, dict) and "name" in entry:
+            out.append(entry)
+        elif isinstance(entry, dict) and len(entry) == 1:
+            ((name, value),) = entry.items()
+            if isinstance(value, list):
+                params: Any = {"ids": value}
+            elif value is None:
+                params = {}
+            elif isinstance(value, dict):
+                params = value
+            else:
+                raise ValueError(f"{where}: params of {name!r} must be a list or mapping")
+            out.append({"name": name, "params": params})
+        else:
+            raise ValueError(f"{where}: expected a preset name, {{name, params}} or {{step: ...}}")
+    return out
+
+
 class ExperimentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     dataset: str
     split: str | None = None
     selection: Selection
-    window_len: int
-    stride: int = 1
-    extractors: list[AdapterSpec]
+    preprocessing: list[AdapterSpec] = Field(default_factory=list)
+    window_len: int = Field(ge=1)
+    stride: int = Field(default=1, ge=1)
+    extractors: list[AdapterSpec] = Field(min_length=1)
     head: AdapterSpec
-    seeds: list[int] = Field(default_factory=lambda: [0])
+    seeds: list[int] = Field(default_factory=lambda: [0], min_length=1)
     role: Literal["comparison", "reference"]
+
+    @field_validator("preprocessing", mode="before")
+    @classmethod
+    def _expand(cls, raw: Any) -> Any:
+        return _expand_preprocessing(raw)
+
+    @field_validator("extractors")
+    @classmethod
+    def _unique_extractors(cls, specs: list[AdapterSpec]) -> list[AdapterSpec]:
+        names = [s.name for s in specs]
+        if len(set(names)) != len(names):
+            raise ValueError("extractor names must be unique")
+        return specs
+
+    @field_validator("seeds")
+    @classmethod
+    def _unique_seeds(cls, seeds: list[int]) -> list[int]:
+        if len(set(seeds)) != len(seeds):
+            raise ValueError("seeds must be unique")
+        return seeds
 
 
 def _named_error(error: ValidationError) -> str:
@@ -72,8 +125,20 @@ def _check_adapter(stage: str, spec: AdapterSpec, path: str) -> Any:
 
 def validate_registry(config: ExperimentConfig) -> None:
     """Check adapter names and their params against the (already discovered) registry."""
+    _check_adapter("dataset", AdapterSpec(name=config.dataset), "dataset")
+    for i, spec in enumerate(config.preprocessing):
+        _check_adapter("preprocess", spec, f"preprocessing.{i}")
+        if spec.params.get("fit_scope") == "whole_recording" and config.role != "reference":
+            raise ConfigError(
+                f"preprocessing.{i}.params.fit_scope: whole_recording requires role: reference"
+            )
     for i, spec in enumerate(config.extractors):
-        _check_adapter("extractor", spec, f"extractors.{i}")
+        cls = _check_adapter("extractor", spec, f"extractors.{i}")
+        if config.window_len < cls.min_window_len:
+            raise ConfigError(
+                f"extractors.{i}.name: window_len {config.window_len} "
+                f"< min_window_len {cls.min_window_len} for {spec.name}"
+            )
     _check_adapter("head", config.head, "head")
 
 
@@ -93,10 +158,28 @@ def load_config(path: str | Path) -> ExperimentConfig:
     return config
 
 
-def resolved_body(config: ExperimentConfig) -> dict[str, Any]:
-    """Canonical config body for the run id: no seeds, adapter versions, result params only."""
+def resolved_body(config: ExperimentConfig, split_root: str | Path = "splits") -> dict[str, Any]:
+    """Canonical config body for the run id: no seeds, adapter versions, result params only.
+
+    `split` is resolved to the committed plan's hash, so replacing the plan changes the id.
+    """
     body = config.model_dump(mode="json")
     body.pop("seeds", None)
+    body["split"] = find_split(config.dataset, config.split, split_root).stem
+    body["dataset_version"] = _check_adapter(
+        "dataset", AdapterSpec(name=config.dataset), "dataset"
+    ).VERSION
+    steps = []
+    for i, spec in enumerate(config.preprocessing):
+        cls = _check_adapter("preprocess", spec, f"preprocessing.{i}")
+        steps.append(
+            {
+                "name": spec.name,
+                "version": cls.VERSION,
+                "params": registry.affecting_params(cls.Params(**spec.params)),
+            }
+        )
+    body["preprocessing"] = steps
     extractors = []
     for i, spec in enumerate(config.extractors):
         cls = _check_adapter("extractor", spec, f"extractors.{i}")
@@ -117,9 +200,53 @@ def resolved_body(config: ExperimentConfig) -> dict[str, Any]:
     return body
 
 
-def compute_run_id(config: ExperimentConfig) -> str:
+def feature_cache_key(
+    config: ExperimentConfig,
+    spec: AdapterSpec,
+    split_hash: str,
+    fitted: Sequence[Mapping[str, Any]],
+) -> str:
+    """Content key of one extractor's feature matrix over all windows (AD-10).
+
+    Head, seeds and role never enter the key. `window_len` and `stride` do only for
+    per-window extractors.
+    """
+    dataset_cls = _check_adapter("dataset", AdapterSpec(name=config.dataset), "dataset")
+    steps = []
+    for i, step in enumerate(config.preprocessing):
+        cls = _check_adapter("preprocess", step, f"preprocessing.{i}")
+        steps.append(
+            {
+                "name": step.name,
+                "version": cls.VERSION,
+                "params": registry.affecting_params(cls.Params(**step.params)),
+            }
+        )
+    ext_cls = _check_adapter("extractor", spec, f"extractor {spec.name}")
+    body: dict[str, Any] = {
+        "dataset": config.dataset,
+        "dataset_version": dataset_cls.VERSION,
+        "split_hash": split_hash,
+        "rooms": list(config.selection.rooms),
+        "preprocessing": steps,
+        "fitted_hash": sha256_hex(list(fitted)),
+        "extractor": {
+            "name": spec.name,
+            "params": registry.affecting_params(ext_cls.Params(**spec.params)),
+            "version": ext_cls.VERSION,
+            "vendor_hash": getattr(ext_cls, "VENDOR_HASH", None),
+            "weights_revision": getattr(ext_cls, "WEIGHTS_REVISION", None),
+        },
+    }
+    if getattr(ext_cls, "granularity", None) == "per_window":
+        body["window_len"] = config.window_len
+        body["stride"] = config.stride
+    return sha256_hex(body)
+
+
+def compute_run_id(config: ExperimentConfig, split_root: str | Path = "splits") -> str:
     """Short hash of the resolved config plus adapter `VERSION`s, excluding `seeds` (AD-5)."""
-    return short_hash(resolved_body(config))
+    return short_hash(resolved_body(config, split_root))
 
 
 def save_config(config: ExperimentConfig, path: str | Path) -> Path:

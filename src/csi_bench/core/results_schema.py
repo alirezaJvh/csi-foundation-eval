@@ -83,6 +83,18 @@ def metrics_as_dict(metrics: Metrics) -> dict:
     }
 
 
+def metrics_from_dict(record: dict) -> Metrics:
+    """Inverse of `metrics_as_dict`."""
+    return Metrics(
+        split=record["split"],
+        accuracy=record["accuracy"],
+        macro_f1=record["macro_f1"],
+        per_class=record["per_class"],
+        confusion_matrix=tuple(tuple(row) for row in record["confusion_matrix"]),
+        class_names=tuple(record["class_names"]),
+    )
+
+
 def _mean_std(values: list[float]) -> list[float]:
     if not values:
         return [0.0, 0.0]

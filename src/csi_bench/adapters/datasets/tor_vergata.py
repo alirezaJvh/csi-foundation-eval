@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 import numpy as np
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from csi_bench.core.contracts import Recording, RecordingMeta
 from csi_bench.core.errors import DataError
@@ -52,6 +52,8 @@ class TorVergata:
     classes = CLASSES
 
     class Params(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
         root: str = "data/csi_proc_python/saved_csi"
 
     def __init__(self, params: "TorVergata.Params | None" = None) -> None:

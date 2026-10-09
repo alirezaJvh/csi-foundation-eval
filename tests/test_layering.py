@@ -32,6 +32,11 @@ def test_project_contracts_pass():
         ("adapters/s/a.py", "import csi_bench.config\n", "adapters import only core"),
         ("adapters/s/a.py", "import csi_bench.runner\n", "adapters import only core"),
         ("adapters/s/a.py", "import csi_bench.adapters.s.b\n", "adapters never import each other"),
+        (
+            "adapters/heads/bad.py",
+            "import csi_bench.adapters.storage.feature_cache\n",
+            "only the runner uses storage adapters",
+        ),
         ("config/bad.py", "import csi_bench.adapters\n", "only runner imports adapters"),
     ],
 )

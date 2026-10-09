@@ -10,9 +10,9 @@ dependencies = [
     "scikit-learn==1.9.1",
     "pandas==3.0.6",
     "pyarrow==25.0.1",
-    "pydantic==2.13.5",
+    "pydantic==2.14.0",
     "PyYAML==6.0.3",
-    "huggingface-hub==2.1.1",
+    "huggingface-hub==2.2.0",
     "timm==1.0.30",
     "mantis-tsfm==1.1.0",
     "mrmr-selection==0.2.8",
@@ -24,7 +24,7 @@ csi-bench = "csi_bench.runner.cli:main"
 [dependency-groups]
 dev = [
     "ruff==0.16.10",
-    "ty==0.0.84",
+    "ty==0.0.85",
     "import-linter==2.15",
     "pytest==9.1.1",
 ]
@@ -99,3 +99,15 @@ name = "only runner imports adapters"
 type = "forbidden"
 source_modules = ["csi_bench.core", "csi_bench.config", "csi_bench.results_api"]
 forbidden_modules = ["csi_bench.adapters"]
+
+[[tool.importlinter.contracts]]
+name = "only the runner uses storage adapters"
+type = "forbidden"
+source_modules = [
+    "csi_bench.adapters.datasets",
+    "csi_bench.adapters.splitters",
+    "csi_bench.adapters.preprocess",
+    "csi_bench.adapters.extractors",
+    "csi_bench.adapters.heads",
+]
+forbidden_modules = ["csi_bench.adapters.storage"]
