@@ -138,3 +138,15 @@ def test_absent_class_omitted(project):
     class_rows = [r for r in _rows(dataset_table_path("tor_vergata")) if r["scope"] == "class"]
     assert {r["class"] for r in class_rows} == {"empty", "sitting", "standing"}
     assert all(r["n_packets"] > 0 for r in class_rows)
+
+
+def test_describe_window_plan_has_no_part_counts(project, capsys):
+    from csi_bench.adapters.datasets.tor_vergata import TorVergata
+    from csi_bench.adapters.splitters.random_window import RandomWindow
+
+    write_split_plan(RandomWindow().split(TorVergata().load(), "tor_vergata"))
+    assert main(["describe", "tor_vergata"]) == 0
+    rows = _rows(dataset_table_path("tor_vergata"))
+    assert all(r[p] is None for r in rows for p in ("train", "val", "test"))
+    (total,) = [r for r in rows if r["scope"] == "total"]
+    assert total["n_packets"] == sum(1000 + i for i in range(4))

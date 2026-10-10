@@ -43,7 +43,7 @@ from csi_bench.core.errors import ConfigError, DataError, ExtractorError
 from csi_bench.core.metrics import evaluate
 from csi_bench.core.ports import ContextCache, FeatureCache
 from csi_bench.core.preprocess import run_chain
-from csi_bench.core.splitplan import PARTS, find_split, load_split_plan
+from csi_bench.core.splitplan import PARTS, check_split_role, find_split, load_split_plan
 from csi_bench.core.windows import build_windows
 from csi_bench.runner.discover import discover
 
@@ -83,14 +83,39 @@ def _peak_rss_mb() -> tuple[float, float]:
     return own / 1024, children / 1024
 
 
+_BENIGN_HOUSEKEEPING = frozenset(
+    {
+        "ExecutorManagerThread",
+        "_ExecutorManagerThread",
+        "QueueFeederThread",
+        "TMonitor",
+        "tqdm_monitor",
+    }
+)
+
+
 def _fork_is_safe(log: logging.Logger) -> bool:
-    """Forking a multi-threaded process can deadlock; stay in-process when threads are live."""
-    threads = threading.active_count()
-    if threads > 1:
+    """Forking a multi-threaded process can deadlock; stay in-process when threads are live.
+
+    Outlives-everything housekeeping monitors never touch extraction state, so they must
+    not disable parallel extraction: loky's executor manager and queue feeder persist
+    after each `joblib.Parallel` (its manager's class is
+    `loky.process_executor._ExecutorManagerThread`, others identify by `name`), and
+    tqdm's monitor lives for the whole process once any dependency (e.g. `mrmr`) shows
+    a progress bar.
+    """
+    stray = [
+        thread
+        for thread in threading.enumerate()
+        if thread is not threading.main_thread()
+        and type(thread).__name__ not in _BENIGN_HOUSEKEEPING
+        and thread.name not in _BENIGN_HOUSEKEEPING
+    ]
+    if stray:
         log.warning(
             "workers>1 requested but %d threads are live; extracting in-process to avoid "
             "a fork deadlock",
-            threads,
+            len(stray),
         )
         return False
     return True
@@ -172,7 +197,6 @@ def _block_context_getter(
     log: logging.Logger,
 ) -> Callable[[str, str], np.ndarray | None]:
     """Get-or-compute one block's extractor intermediates through the runner-owned cache."""
-    counts = {"hit": 0, "miss": 0}
 
     def get(recording_id: str, split: str) -> np.ndarray:
         rec = by_id[recording_id]
@@ -182,9 +206,8 @@ def _block_context_getter(
         )
         context = cache.get(key)
         if context is not None:
-            counts["hit"] += 1
+            log.info("block context %s %s:%s cached", spec.name, recording_id, split)
             return context
-        counts["miss"] += 1
         context = extractor.compute_context(rec.csi[:, start:end, :])
         cache.put(key, context)
         log.info("block context %s %s:%s computed", spec.name, recording_id, split)
@@ -570,6 +593,7 @@ def _execute(
         recordings = source.load()
         log.info("stage load: %.2fs", time.monotonic() - stage)
         plan = load_split_plan(find_split(config.dataset, config.split), recordings)
+        check_split_role(plan.unit, config.role)
         class_names = tuple(source.classes)
 
         known_rooms = {r.room for r in recordings}

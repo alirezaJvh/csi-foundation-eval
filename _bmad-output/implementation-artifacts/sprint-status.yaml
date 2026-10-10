@@ -51,13 +51,13 @@ development_status:
   2-6-feature-selection-manual-subsets-and-mrmr: done
   2-7-sweeps-and-the-python-experiment-builder: done
   2-8-comparison-report-and-notebook-results-api: done
-  2-9-faster-feature-extraction-and-head-training: in-progress
+  2-9-faster-feature-extraction-and-head-training: done
   2-10-compute-paper-beamforming-inner-metrics-once-per-packet: done
-  2-11-share-paper-beamforming-per-position-metrics-across-the-sweep: review
+  2-11-share-paper-beamforming-per-position-metrics-across-the-sweep: done
   epic-2-retrospective: optional
 
-  epic-3: backlog
-  3-1-window-level-random-splitter-for-reference-runs: backlog
+  epic-3: in-progress
+  3-1-window-level-random-splitter-for-reference-runs: done
   3-2-reproduce-the-paper-and-measure-leakage: backlog
   epic-3-retrospective: optional
 

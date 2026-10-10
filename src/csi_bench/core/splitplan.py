@@ -5,7 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from csi_bench.core.contracts import Recording, SplitPlan
-from csi_bench.core.errors import DataError
+from csi_bench.core.errors import ConfigError, DataError
 from csi_bench.core.hashing import canonical_json, short_hash
 
 PARTS = ("train", "val", "test")
@@ -14,6 +14,8 @@ PARTS = ("train", "val", "test")
 def compute_split_hash(plan: SplitPlan) -> str:
     body = asdict(plan)
     del body["split_hash"]
+    if body["unit"] == "block":
+        del body["unit"]  # keeps the hashes of plans written before `unit` existed
     return short_hash(body)
 
 
@@ -40,6 +42,20 @@ def find_split(
     return files[0]
 
 
+def read_plan_unit(path: str | Path) -> str:
+    """The `unit` of a committed plan without loading recordings."""
+    try:
+        return str(json.loads(Path(path).read_text(encoding="utf-8")).get("unit", "block"))
+    except (OSError, ValueError, AttributeError) as e:
+        raise DataError(f"{path}: unreadable split plan: {e}") from e
+
+
+def check_split_role(unit: str, role: str) -> None:
+    """Window-level splits leak across neighbouring windows: reference runs only (AD-6)."""
+    if unit == "window" and role != "reference":
+        raise ConfigError("a window-unit split (random_window) requires role: reference")
+
+
 def write_split_plan(plan: SplitPlan, root: str | Path = "splits") -> Path:
     """Write the plan to `<root>/<dataset>/<split_hash>.json` and return the path."""
     path = Path(root) / plan.dataset / f"{plan.split_hash}.json"
@@ -63,6 +79,7 @@ def load_split_plan(path: str | Path, recordings: list[Recording]) -> SplitPlan:
             },
             source_sha256=raw["source_sha256"],
             split_hash=raw["split_hash"],
+            unit=raw.get("unit", "block"),
         )
     except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
         raise DataError(f"{path}: unreadable split plan: {e}") from e

@@ -36,6 +36,7 @@ class SplitPlan:
     blocks: dict[str, dict[str, tuple[int, int]]]
     source_sha256: dict[str, str]
     split_hash: str
+    unit: str = "block"  # "window": assignment derived per window from params (reference only)
 
 
 @dataclass(frozen=True)

@@ -14,9 +14,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from csi_bench.config.presets import PREPROCESS_PRESETS
 from csi_bench.core import registry
-from csi_bench.core.errors import ConfigError
+from csi_bench.core.errors import ConfigError, DataError
 from csi_bench.core.hashing import sha256_hex, short_hash
-from csi_bench.core.splitplan import find_split
+from csi_bench.core.splitplan import check_split_role, find_split, read_plan_unit
 
 
 class Selection(BaseModel):
@@ -155,6 +155,11 @@ def _check_adapter(stage: str, spec: AdapterSpec, path: str) -> Any:
 def validate_registry(config: ExperimentConfig) -> None:
     """Check adapter names and their params against the (already discovered) registry."""
     _check_adapter("dataset", AdapterSpec(name=config.dataset), "dataset")
+    try:
+        unit = read_plan_unit(find_split(config.dataset, config.split))
+    except DataError:
+        unit = "block"  # no usable plan yet: `run` checks again once it loads one
+    check_split_role(unit, config.role)
     for i, spec in enumerate(config.preprocessing):
         _check_adapter("preprocess", spec, f"preprocessing.{i}")
         if spec.params.get("fit_scope") == "whole_recording" and config.role != "reference":
@@ -329,6 +334,7 @@ def context_cache_key(
                 "params": registry.affecting_params(ext_cls.Params(**spec.params)),
                 "version": ext_cls.VERSION,
                 "vendor_hash": getattr(ext_cls, "VENDOR_HASH", None),
+                "weights_revision": getattr(ext_cls, "WEIGHTS_REVISION", None),
             },
         }
     )

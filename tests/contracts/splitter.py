@@ -16,5 +16,9 @@ def check_splitter(splitter: Splitter, recordings: list[Recording], dataset: str
         spans = [b["train"], b["val"], b["test"]]
         for start, end in spans:
             assert 0 <= start < end <= rec.meta.n_packets
+        if plan.unit == "window":
+            # the Windower assigns windows; every part spans the whole recording
+            assert all(span == (0, rec.meta.n_packets) for span in spans)
+            continue
         for (_, prev_end), (next_start, _) in zip(spans, spans[1:], strict=False):
             assert next_start - prev_end >= plan.gap_packets

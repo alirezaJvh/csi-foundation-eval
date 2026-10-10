@@ -2,7 +2,7 @@
 title: 'Share paper_beamforming per-position metrics across the sweep'
 type: 'feature'
 created: '2026-10-10'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'e6cc8805f93e52c2b4d11c7d4cda4b23bf2ba70c'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -61,11 +61,11 @@ context:
 
 ### Review Findings
 
-- [ ] [Review][Decision] Working tree bundles Story 2.9 work into the 2-11 diff -- the uncommitted diff creates `_extract_parallel`, `resolve_workers`, `--workers` CLI flags, `joblib.parallel_config` head tuning, `svm` `cache_size=500` and the `joblib` dependency, none of which are in spec-2-11's Code Map (which says "Not to touch: `_extract_parallel`"); sprint-status has 2-9 `in-progress`. None of the 2.9-substance findings below can be blessed against this spec.
-- [ ] [Review][Decision] Loky threads disable parallel extraction from run 2 of a workers>1 sweep -- verified empirically: after one `joblib.Parallel` (head tuning, `run.py:633`) exits, `ExecutorManagerThread`/`QueueFeederThread` stay alive, `_fork_is_safe` (`run.py:86`) then returns False and every following sweep run falls back to slice extraction via a logged warning. Unobserved by tests (`test_parallel_extraction_matches_single_process` runs one extraction only). Viable fixes: exclude loky lifecycle threads from `_fork_is_safe` (forks while lock-holding threads exist -- the hazard the check guards), or spawn/reuse a non-fork pool, or force re-run proof via a two-iteration test. Fix strategy belongs to Story 2.9.
-- [ ] [Review][Patch] Context-cache hits are never logged [src/csi_bench/runner/run.py:175] -- `counts = {"hit": 0, "miss": 0}` is incremented but never read or emitted; only misses log, so no run-level evidence that existing entries were reused (spec task "log hits/misses" half-implemented). Log a hits/misses summary after the block pass.
-- [ ] [Review][Patch] `context_cache_key` omits `WEIGHTS_REVISION` that `feature_cache_key` carries [src/csi_bench/config/experiment.py:327] -- today harmless (no extractor sets vendor weights), but when one does, per-block entries would silently survive a weights update that invalidates the feature key. Add `"weights_revision": getattr(ext_cls, "WEIGHTS_REVISION", None)` next to `vendor_hash`.
-- [ ] [Review][Patch] Untracked `context_cache.py` was excluded from the review diff [src/csi_bench/adapters/storage/context_cache.py] -- `git diff HEAD` skips untracked files, so the story's central new module was absent from the submitted diff (module itself verified: atomic `put`, corrupt-entry recompute, corrupt test passes). `git add` it with the story commit.
+- [x] [Review][Decision] Working tree bundles Story 2.9 work into the 2-11 diff -- resolved: review narrowed to this story's files (extractor, ports, context cache, config keys, runner block-context path, its tests); Story 2.9 code (parallel extraction, head tuning, `svm` cache) stays out of this blessing, its findings ride with 2.9.
+- [x] [Review][Decision] Loky threads disable parallel extraction from run 2 of a workers>1 sweep -- resolved: applied option 1; `_fork_is_safe` now ignores benign outlives-everything housekeeping monitors (loky executor manager/queue feeder, tqdm `TMonitor`), with a two-run regression test (`test_loky_head_tuning_does_not_disable_parallel_extraction`) proving the second run still extracts in parallel. During the fix, the tqdm monitor was found to be the real-world polluter (`mrmr` imports tqdm), explaining the original "multi-core gave no speed-up" measurement.
+- [x] [Review][Patch] Context-cache hits are never logged [src/csi_bench/runner/run.py:175] -- fixed: the dead `counts` dict was removed and both paths log ("computed"/"cached" per block); covered by `test_block_context_hits_and_misses_are_logged`.
+- [x] [Review][Patch] `context_cache_key` omits `WEIGHTS_REVISION` that `feature_cache_key` carries [src/csi_bench/config/experiment.py:327] -- fixed: `"weights_revision": getattr(ext_cls, "WEIGHTS_REVISION", None)` added next to `vendor_hash`.
+- [x] [Review][Patch] Untracked `context_cache.py` was excluded from the review diff [src/csi_bench/adapters/storage/context_cache.py] -- resolved: `git add`ed with the story change.
 - [x] [Review][Defer] No automated regression guard for equality against a pre-change cached matrix -- deferred: AC-2's "against a matrix cached by the old path" clause was satisfied by a recorded manual check (L=20 r1, bit-for-bit per Implementation Notes); an automated guard needs a stored fixture of pre-change output, which the suite cannot regenerate.
 - [x] [Review][Defer] BLAS/OpenMP thread pools unbounded in forked extraction workers -- deferred: only torch threads are capped (`TORCH_THREADS = 1`); belongs to Story 2.9's stalled-speedup diagnosis (956 s vs 989 s).
 - [x] [Review][Defer] `svm` kernel cache 500 MB per instance under parallel head fitting -- deferred: 4 workers could hold ~2 GB, but measured peak RSS is 1.76 GB, well inside the ~4 GB budget; reconciliation of the "kept modest" comment belongs to Story 2.9 (`src/csi_bench/adapters/heads/svm.py:16`).

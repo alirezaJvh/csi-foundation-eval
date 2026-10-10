@@ -1,6 +1,8 @@
 import json
+import logging
 import re
 import sys
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -896,6 +898,122 @@ def test_parallel_extraction_matches_single_process(tmp_path, monkeypatch):
     assert m_one["seeds"] == m_many["seeds"]
 
 
+def test_loky_head_tuning_does_not_disable_parallel_extraction(tmp_path, monkeypatch):
+    """A head-tuning run leaves loky housekeeping threads behind; the next run in the
+    same process must still fork parallel extraction instead of falling back to slices."""
+    from csi_bench.runner import run as run_module
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    calls: list[int] = []
+    original_parallel = run_module._extract_parallel
+
+    def spy_parallel(*args, **kwargs):
+        calls.append(1)
+        return original_parallel(*args, **kwargs)
+
+    monkeypatch.setattr(run_module, "_extract_parallel", spy_parallel)
+    changes = {
+        "preprocessing": ["ant2"],
+        "extractors": [{"name": "amplitude_stats"}],
+        "head": {
+            "name": "random_forest",
+            "params": {"n_estimators_grid": [10], "max_depth_grid": [None]},
+        },
+    }
+    _run_capture(tmp_path, monkeypatch, "first", 3, **changes)
+    assert calls == [1]
+    _run_capture(tmp_path, monkeypatch, "second", 3, **changes)
+    assert calls == [1, 1]
+
+
+def test_fork_is_safe_ignores_loky_housekeeping_threads(tmp_path, monkeypatch, caplog):
+    from csi_bench.runner import run as run_module
+
+    started = threading.Event()
+    released = threading.Event()
+
+    def worker():
+        started.set()
+        released.wait(10)
+
+    t = threading.Thread(target=worker, name="plain-thread")
+    t.start()
+    started.wait(10)
+    log = logging.getLogger("test")
+    try:
+        assert not run_module._fork_is_safe(log)
+    finally:
+        released.set()
+        t.join()
+
+    # one live thread per allowlist entry, each matching only that entry (by class or name)
+    class _ExecutorManagerThread(threading.Thread):
+        pass
+
+    class TMonitor(threading.Thread):
+        pass
+
+    released.clear()
+    housekeeping = [
+        cls(target=released.wait, args=(10,), name=name)
+        for cls, name in (
+            (_ExecutorManagerThread, "loky-manager"),
+            (threading.Thread, "ExecutorManagerThread"),
+            (threading.Thread, "QueueFeederThread"),
+            (TMonitor, "monitor"),
+            (threading.Thread, "tqdm_monitor"),
+        )
+    ]
+    for thread in housekeeping:
+        thread.start()
+    caplog.clear()
+    try:
+        assert all(thread.is_alive() for thread in housekeeping)
+        assert run_module._fork_is_safe(log)
+        assert not caplog.records
+    finally:
+        released.set()
+        for thread in housekeeping:
+            thread.join(timeout=10)
+
+
+def test_block_context_hits_and_misses_are_logged(tmp_path, monkeypatch, caplog):
+    import types
+
+    from csi_bench.adapters.extractors.paper_beamforming import PaperBeamforming
+    from csi_bench.adapters.storage.context_cache import NpzContextCache
+    from csi_bench.config.experiment import ExperimentConfig
+    from csi_bench.runner import run as run_module
+    from csi_bench.runner.discover import discover
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    discover()
+    config = ExperimentConfig.model_validate(
+        {**CONFIG, "preprocessing": ["ant2"], "extractors": [{"name": "paper_beamforming"}]}
+    )
+    caplog.set_level(logging.INFO)
+    cache = NpzContextCache(tmp_path / "cache" / "context")
+    log = logging.getLogger("test")
+    bounds = {"r1_empty": {"train": (0, 100)}}
+    by_id = {
+        "r1_empty": types.SimpleNamespace(
+            csi=np.zeros((2, 100, 3), dtype=np.complex64),
+            meta=types.SimpleNamespace(source_sha256="sha"),
+        )
+    }
+    helper = run_module._block_context_getter(
+        config, config.extractors[0], [], PaperBeamforming(), by_id, bounds, cache, log
+    )
+    ctx = helper("r1_empty", "train")
+    assert ctx is not None
+    again = helper("r1_empty", "train")
+    np.testing.assert_array_equal(again, ctx)
+    assert caplog.text.count("block context paper_beamforming r1_empty:train computed") == 1
+    assert caplog.text.count("block context paper_beamforming r1_empty:train cached") == 1
+
+
 def test_chunk_bounds_contiguous_and_capped():
     from csi_bench.runner.run import _chunk_bounds
 
@@ -1197,3 +1315,45 @@ def test_corrupt_context_entry_is_recomputed(tmp_path):
     np.testing.assert_array_equal(cache.get("k"), np.arange(6.0).reshape(2, 3))
     (tmp_path / "k.npz").write_bytes(b"junk")
     assert cache.get("k") is None
+
+
+def test_random_window_reference_run_and_comparison_refused(tmp_path, monkeypatch, capsys):
+    import shutil
+
+    from csi_bench.adapters.datasets.tor_vergata import TorVergata
+    from csi_bench.adapters.splitters.random_window import RandomWindow
+
+    _make_project(tmp_path)
+    shutil.rmtree(tmp_path / "splits")
+    recs = TorVergata(
+        TorVergata.Params(root=str(tmp_path / "data/csi_proc_python/saved_csi"))
+    ).load()
+    plan = RandomWindow().split(recs, "tor_vergata")
+    write_split_plan(plan, tmp_path / "splits")
+    monkeypatch.chdir(tmp_path)
+    assert main(["run", _config_file(tmp_path, role="reference")]) == 0
+    run_id = capsys.readouterr().out.strip()
+    prov = json.loads(rs.provenance_path(run_id, tmp_path / "runs").read_text())
+    assert prov["split_hash"] == plan.split_hash
+    assert main(["run", _config_file(tmp_path, role="comparison")]) != 0
+    assert "role: reference" in capsys.readouterr().err
+
+
+def test_run_refuses_comparison_on_window_plan_without_validation(tmp_path, monkeypatch, capsys):
+    """The `run` gate holds on its own, even if config validation let the config through."""
+    import shutil
+
+    from csi_bench.adapters.datasets.tor_vergata import TorVergata
+    from csi_bench.adapters.splitters.random_window import RandomWindow
+    from csi_bench.config import experiment
+
+    _make_project(tmp_path)
+    shutil.rmtree(tmp_path / "splits")
+    recs = TorVergata(
+        TorVergata.Params(root=str(tmp_path / "data/csi_proc_python/saved_csi"))
+    ).load()
+    write_split_plan(RandomWindow().split(recs, "tor_vergata"), tmp_path / "splits")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(experiment, "check_split_role", lambda unit, role: None)
+    assert main(["run", _config_file(tmp_path, role="comparison")]) != 0
+    assert "role: reference" in capsys.readouterr().err

@@ -2,7 +2,7 @@
 title: 'Faster feature extraction and head training'
 type: 'feature'
 created: '2026-10-10'
-status: 'in-progress'
+status: 'done'
 baseline_commit: 'e6cc8805f93e52c2b4d11c7d4cda4b23bf2ba70c'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -49,11 +49,11 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `src/csi_bench/runner/run.py` -- `resolve_workers`, chunked fork-pool extraction, `joblib.parallel_config` around head fits, log extraction seconds and peak RSS -- the speed-up
-- [ ] `src/csi_bench/runner/cli.py` -- `--workers` on `run`/`sweep` -- command surface
-- [ ] `tests/test_run.py` -- workers=1 vs N equal feature matrix and metrics (extractor and `random_forest`/`knn`); few-windows case; bad worker count; heads see N jobs -- the I/O matrix
-- [ ] `tests/test_sweep.py` -- a `running` run is rerun on resume -- spec AC
-- [ ] this spec, Implementation Notes -- measured extraction time and peak memory before (workers=1) and after for the first `paper_beamforming` run of `classical_baseline.yaml` -- spec AC
+- [x] `src/csi_bench/runner/run.py` -- `resolve_workers`, chunked fork-pool extraction, `joblib.parallel_config` around head fits, log extraction seconds and peak RSS -- the speed-up
+- [x] `src/csi_bench/runner/cli.py` -- `--workers` on `run`/`sweep` -- command surface
+- [x] `tests/test_run.py` -- workers=1 vs N equal feature matrix and metrics (extractor and `random_forest`/`knn`); few-windows case; bad worker count; heads see N jobs -- the I/O matrix
+- [x] `tests/test_sweep.py` -- a `running` run is rerun on resume -- spec AC
+- [x] this spec, Implementation Notes -- measured extraction time and peak memory before (workers=1) and after for the first `paper_beamforming` run of `classical_baseline.yaml` -- spec AC
 
 **Acceptance Criteria:**
 - Given `paper_beamforming` and a set of windows, when extracted with several workers, then the matrix is identical to the single-process result and the paper-parity test passes.

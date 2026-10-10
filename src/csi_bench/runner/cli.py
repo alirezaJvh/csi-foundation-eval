@@ -2,7 +2,7 @@
 
 import argparse
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 import pyarrow as pa
@@ -22,6 +22,11 @@ _COUNTS = ("n_packets", *PARTS)
 _SCOPE_RECORDING, _SCOPE_CLASS, _SCOPE_ROOM, _SCOPE_TOTAL = SCOPES
 
 
+def _sum_or_none(values: Iterable[int | None]) -> int | None:
+    values = list(values)
+    return None if None in values else sum(v for v in values if v is not None)
+
+
 def build_table(
     recordings: list[Recording], plan: SplitPlan, classes: Sequence[str]
 ) -> list[dict[str, Any]]:
@@ -37,7 +42,8 @@ def build_table(
             "class": classes[r.label],
             "n_packets": r.meta.n_packets,
             "downsample_factor": r.meta.downsample_factor,
-            **{p: blocks[p][1] - blocks[p][0] for p in PARTS},
+            # window-unit plans assign windows, not packets: no per-part packet count
+            **{p: None if plan.unit == "window" else blocks[p][1] - blocks[p][0] for p in PARTS},
             "split_hash": plan.split_hash,
         }
         rows.append(row)
@@ -50,7 +56,7 @@ def build_table(
             "room": room,
             "class": label,
             "downsample_factor": None,
-            **{c: sum(x[c] for x in sel) for c in _COUNTS},
+            **{c: _sum_or_none(x[c] for x in sel) for c in _COUNTS},
             "split_hash": plan.split_hash,
         }
 
