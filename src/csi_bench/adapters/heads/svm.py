@@ -11,6 +11,10 @@ from csi_bench.core.contracts import FeatureMatrix
 from csi_bench.core.head_search import tune_and_refit
 from csi_bench.core.registry import register
 
+# libsvm kernel cache in MB (default 200). Speed only, never the result; kept modest because
+# candidates are fitted in parallel.
+KERNEL_CACHE_MB = 500
+
 
 @register("head", "svm")
 class Svm:
@@ -30,7 +34,9 @@ class Svm:
         self.val_score = 0.0
 
     def _make(self, c: float) -> SVC:
-        return SVC(C=c, kernel=self.params.kernel, random_state=self.seed)
+        return SVC(
+            C=c, kernel=self.params.kernel, random_state=self.seed, cache_size=KERNEL_CACHE_MB
+        )
 
     def fit(
         self,

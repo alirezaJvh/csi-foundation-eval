@@ -59,3 +59,36 @@
 - Sweep `--force`/dirty-rerun tests (`tests/test_sweep.py:87-121`) only assert the `force` kwarg; spy on `run_module._extract` to prove seeds are recomputed. Story 2.7.
 - Sweep robustness (story 2.7): duplicate `run_id`s in one sweep run twice; `_sweep_action` can raise outside the per-run try; a still-dirty finished run is skipped even if the edits changed; `--force` leaves stale seed artifacts.
 - Notebook `01_classical_overview.ipynb` is never executed by a test; add a test applying its pandas expressions to the `runs` fixture index.
+
+## Deferred from: Story 2.9 measurements (2026-10-10)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-9-faster-feature-extraction-and-head-training.md`
+  summary: Compute `paper_beamforming` inner-window metrics once per packet and reuse them across overlapping windows (Story 2.10, via the block-aware `extract_blocks` path). Sharing across window lengths needs a runner-owned cache entry and stays deferred until extraction is still a bottleneck after 2.10.
+  evidence: Multi-core extraction gave no speed-up (956 s vs 989 s); see `proposal-2-10-reuse-inner-windows.md`.
+
+## Deferred from: code review of spec-2-9-faster-feature-extraction-and-head-training (2026-10-10)
+
+- knn "more than one core" AC is only checked via `joblib.effective_n_jobs(None)` inside `fit` (`tests/test_run.py:931`), not by observing actual parallel work; `KNeighborsClassifier` may run its tree algorithms serially. Settle by checking the estimator's chosen algorithm/dispatch or measuring CPU time.
+- No wall-clock speed-up from multi-worker extraction (spec Implementation Notes: 956 s vs 989 s); already acknowledged and tracked for the proposed Story 2.10.
+- Default extraction workers to 1: 4 workers gave no speed-up (956 s vs 989 s) and cost fork overhead and ~5 min test time. Keep head jobs at `min(4, cpus)`. Decide during the Story 2.9 code review, since it changes that story's AC.
+- Time each stage (load, preprocess, extract, head fit) on a few sweep cells; `svm` on 40–60k rows may dominate once extraction is fast. First AC of Story 2.10.
+- The "memory-bandwidth bound" diagnosis of the extractor comes from microbenchmarks only; Story 2.10's timing step should re-check it.
+
+## Deferred from: code review of spec-2-11-share-paper-beamforming-per-position-metrics-across-the-sweep.md (2026-10-10)
+
+- No automated regression guard for equality against a pre-change cached matrix (AC-2's "matrix cached by the old path" clause): the bit-for-bit check against the pre-change matrix (key `e7a4d911...`, L=20 r1) is recorded in the spec's Implementation Notes but was manual; an automated guard requires committing a stored fixture of pre-change output the suite cannot regenerate.
+- BLAS/OpenMP thread pools are unbounded in forked extraction workers (only torch threads are capped); consistent with the measured lack of parallel-extraction speed-up (956 s vs 989 s) — belongs to Story 2.9's performance diagnosis.
+- `svm` `KERNEL_CACHE_MB = 500` per fitted instance: 4 parallel head workers could hold ~2 GB of libsvm cache; measured peak RSS (1.76 GB) is within the ~4 GB budget, so only the "kept modest" comment wording is off — belongs to Story 2.9.
+
+## Deferred from: code review of spec-2-10-compute-paper-beamforming-inner-metrics-once-per-packet.md (2026-10-10)
+
+- knn/random_forest "use more than one core" AC is verified only via `joblib.effective_n_jobs(None)` — the test observes the ambient joblib config, not actual parallel work dispatched by the estimator; already tracked from spec-2-9's review.
+
+## Deferred from: correct-course for Story 2.11 (2026-10-10)
+
+- source_spec: none
+  summary: Run several sweep processes at once (claim lock per run, lock per feature-cache key, safe index updates).
+  evidence: out of scope for Story 2.11; estimated 2-3x on the head stage; do after 2.11 so workers do not duplicate extraction.
+- source_spec: none
+  summary: Rewrite the `paper_beamforming` maths to compute each packet's amplitude and pair distances once, keeping the sum order so results stay identical.
+  evidence: out of scope for Story 2.11; only if extraction is still a bottleneck after sharing.

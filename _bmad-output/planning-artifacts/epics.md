@@ -470,7 +470,61 @@ So that the 216-run classical baseline sweep finishes in hours, not days.
 **Then** the measured extraction time and peak memory before and after are recorded in the story's spec
 **And** a run left in `running` state by an interrupted sweep is rerun on resume
 
-**Out of scope (separate story if still too slow):** reusing overlapping inner windows across windows, which needs recording context in the extractor interface, and running several sweep processes at once, which needs a run-directory lock.
+**Out of scope:** running several sweep processes at once, which needs a run-directory lock. Reusing overlapping inner windows moved to Story 2.10 (the measured extraction time showed multi-core alone does not help).
+
+### Story 2.10: Compute paper_beamforming inner-window metrics once per packet
+
+As a researcher,
+I want `paper_beamforming` to compute each inner-window metric once per packet instead of once per window,
+So that the classical baseline sweep's extraction time falls from ~16 min to a few minutes per run.
+
+**Acceptance Criteria:**
+
+**Given** the stage timings of one `paper_beamforming` run on `experiments/classical_baseline.yaml` (load, preprocess, extract, head fit)
+**Then** they are logged and recorded in the story's spec before the change, so the gain is measured and the next bottleneck is known
+
+**Given** a split block and window offsets
+**When** `paper_beamforming` extracts through the block-aware path
+**Then** the feature matrix is exactly equal (same values, same row order) to the one from the slice-based `extract`, for `fix_distance_loop` true and false, on synthetic and real windows
+**And** the paper-parity test (`tests/test_paper_beamforming.py` vs `tests/oracles/paper_processing.py`) still passes
+**And** if bit-equality proves impossible, the tolerance decision goes to the human and `VERSION` is bumped
+
+**Given** an extractor with `uses_context = True`
+**Then** the runner calls it block by block, never across a split gap, so every position a window uses lies inside that window
+**And** a contract test asserts block-aware output equals slice-based output for every registered extractor that offers both
+**And** the feature-cache key and cached matrix are unchanged, and `VERSION` stays the same when values are identical
+
+**Given** the same run as before
+**Then** the measured extraction time and peak RSS before and after are recorded in the story's spec, and peak RSS stays within about 4 GB
+
+**Out of scope:** caching per-position arrays across window lengths and room sets (moved to Story 2.11), and running several sweep processes at once.
+
+### Story 2.11: Share paper_beamforming per-position metrics across the sweep
+
+As a researcher,
+I want the per-position inner-window metrics computed once per recording block and reused by every window length and room set,
+So that the baseline sweep's `paper_beamforming` extraction falls from about 1.6 h to minutes.
+
+**Acceptance Criteria:**
+
+**Given** two runs of `paper_beamforming` that differ only in `window_len`, `stride` or room set
+**When** the second run extracts
+**Then** it reads the per-block arrays from the runner-owned cache and recomputes none that exist
+**And** r1+r2 is built from the r1 and r2 entries
+
+**Given** any window length, stride or room set, and `fix_distance_loop` true and false
+**When** features are extracted through the shared arrays
+**Then** the matrix equals the Story 2.10 block-aware matrix exactly, including against a matrix cached by the old path
+**And** the paper-parity test still passes
+
+**Given** a preprocessing chain with fitted state
+**Then** the per-block entries are keyed by that state, so values are never shared across different state
+**And** the feature-matrix cache key, `VERSION` and run ids are unchanged, and deleting `.cache` never changes a result
+
+**Given** the `paper_beamforming` runs of `experiments/classical_baseline.yaml`
+**Then** total extraction time and peak RSS before and after are recorded in the story's spec, and peak RSS stays within about 4 GB
+
+**Out of scope:** running several sweep processes at once, and rewriting the extractor maths.
 
 ## Epic 3: Paper reproduction and leakage measurement
 

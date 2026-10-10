@@ -23,6 +23,7 @@ DOPPLER_WINDOW = 8
 DISTANCE_WINDOW = 16
 FLATNESS_WINDOW = 1
 START = 1  # `processing.py` starts its inner windows at packet 1
+POSITION_CHUNK = 32  # inner starts per batch; bounds the `(positions, 40, size, subc)` temporaries
 MIN_WINDOW_LEN = DISTANCE_WINDOW + 2  # two inner windows, so the variances are not constant
 
 
@@ -33,14 +34,9 @@ def _weights() -> tuple[np.ndarray, np.ndarray]:
 
 
 def _combined_amplitude(ch1: np.ndarray, ch2: np.ndarray, size: int, steps: np.ndarray):
-    """Amplitudes of every inner window under every weight: `(windows, weights, size, subc)`."""
-    last = ch1.shape[0]
-    w1 = sliding_window_view(ch1[START:], size, axis=0).transpose(0, 2, 1)[
-        : last - START - size + 1
-    ]
-    w2 = sliding_window_view(ch2[START:], size, axis=0).transpose(0, 2, 1)[
-        : last - START - size + 1
-    ]
+    """Amplitudes of every inner start under every weight: `(positions, weights, size, subc)`."""
+    w1 = sliding_window_view(ch1, size, axis=0).transpose(0, 2, 1)
+    w2 = sliding_window_view(ch2, size, axis=0).transpose(0, 2, 1)
     rotation = np.exp(steps * 1j)[None, :, None, None]
     return np.abs(w1[:, None] + w2[:, None] * rotation)
 
@@ -57,36 +53,61 @@ def _distance(amp: np.ndarray, fix_distance_loop: bool) -> np.ndarray:
     return total / count
 
 
+def _position_metrics(
+    ch1: np.ndarray, ch2: np.ndarray, fix_distance_loop: bool, first: int, count: int
+) -> np.ndarray:
+    """Six metrics for the inner starts `first .. first+count-1` (block-relative, before START).
+
+    Returns `(6, count)`: doppler theta/max, distance theta/max, flatness theta/min. Each
+    position reads only its own inner window's packets, so any chunking gives the same values.
+    """
+    steps, labels = _weights()
+    out = np.empty((6, count))
+    for lo in range(0, count, POSITION_CHUNK):
+        n = min(POSITION_CHUNK, count - lo)
+        base = START + first + lo
+        c1, c2 = ch1[base:], ch2[base:]
+
+        amp = _combined_amplitude(
+            c1[: n + DOPPLER_WINDOW - 1], c2[: n + DOPPLER_WINDOW - 1], DOPPLER_WINDOW, steps
+        )
+        integral = np.abs(np.fft.fft(amp, axis=2)).mean(axis=-1).sum(axis=-1)
+        out[0, lo : lo + n] = labels[integral.argmax(axis=1)]
+        out[1, lo : lo + n] = integral.max(axis=1)
+
+        amp = _combined_amplitude(
+            c1[: n + DISTANCE_WINDOW - 1], c2[: n + DISTANCE_WINDOW - 1], DISTANCE_WINDOW, steps
+        )
+        distance = _distance(amp, fix_distance_loop)
+        out[2, lo : lo + n] = labels[distance.argmax(axis=1)]
+        out[3, lo : lo + n] = distance.max(axis=1)
+
+        amp = _combined_amplitude(c1[:n], c2[:n], FLATNESS_WINDOW, steps)
+        variance = amp.var(axis=-1).mean(axis=-1)
+        out[4, lo : lo + n] = labels[variance.argmin(axis=1)]
+        out[5, lo : lo + n] = variance.min(axis=1)
+    return out
+
+
+def _reduce(metrics: np.ndarray, first: int, n_metric: int) -> list[float]:
+    """The six features of one window from the per-position metrics at `first .. +n_metric`."""
+    m = metrics[:, first : first + n_metric]
+    return [
+        float(np.var(m[0])),
+        float(np.mean(m[1])),
+        float(np.var(m[2])),
+        float(np.mean(m[3])),
+        float(np.var(m[4])),
+        float(np.mean(m[5])),
+    ]
+
+
 def _features(csi: np.ndarray, fix_distance_loop: bool) -> list[float]:
     ch1 = csi[0].astype(np.complex128)
     ch2 = csi[1].astype(np.complex128)
-    steps, labels = _weights()
     n_metric = ch1.shape[0] - START - DISTANCE_WINDOW + 1
-
-    amp = _combined_amplitude(ch1, ch2, DOPPLER_WINDOW, steps)
-    integral = np.abs(np.fft.fft(amp, axis=2)).mean(axis=-1).sum(axis=-1)
-    best = integral.argmax(axis=1)
-    doppler_theta = labels[best][:n_metric]
-    doppler_max = integral.max(axis=1)[:n_metric]
-
-    amp = _combined_amplitude(ch1, ch2, DISTANCE_WINDOW, steps)
-    distance = _distance(amp, fix_distance_loop)
-    distance_theta = labels[distance.argmax(axis=1)][:n_metric]
-    distance_max = distance.max(axis=1)[:n_metric]
-
-    amp = _combined_amplitude(ch1, ch2, FLATNESS_WINDOW, steps)
-    variance = amp.var(axis=-1).mean(axis=-1)
-    flatness_theta = labels[variance.argmin(axis=1)][:n_metric]
-    flatness_min = variance.min(axis=1)[:n_metric]
-
-    return [
-        float(np.var(doppler_theta)),
-        float(np.mean(doppler_max)),
-        float(np.var(distance_theta)),
-        float(np.mean(distance_max)),
-        float(np.var(flatness_theta)),
-        float(np.mean(flatness_min)),
-    ]
+    metrics = _position_metrics(ch1, ch2, fix_distance_loop, 0, n_metric)
+    return _reduce(metrics, 0, n_metric)
 
 
 @register("extractor", "paper_beamforming")
@@ -95,6 +116,7 @@ class PaperBeamforming:
     granularity = "per_window"
     requires = {"phase": True, "n_antennas": 2}
     min_window_len = MIN_WINDOW_LEN
+    uses_context = True
 
     class Params(BaseModel):
         model_config = ConfigDict(extra="forbid")
@@ -117,4 +139,60 @@ class PaperBeamforming:
                     f"got shape {csi.shape}"
                 )
             rows.append(_features(csi, self.params.fix_distance_loop))
+        return FeatureMatrix(values=np.asarray(rows, dtype=np.float32), feature_names=NAMES)
+
+    def compute_context(self, block: np.ndarray) -> np.ndarray:
+        """Per-position metrics `(6, B - 16)` of one whole split block.
+
+        They depend on the block alone, so every window length, stride and room set can share
+        them.
+        """
+        if block.shape[0] != 2 or block.shape[1] < MIN_WINDOW_LEN:
+            raise ExtractorError(
+                f"paper_beamforming needs 2 antennas and >= {MIN_WINDOW_LEN} packets, "
+                f"got block {block.shape}"
+            )
+        ch1 = block[0].astype(np.complex128)
+        ch2 = block[1].astype(np.complex128)
+        count = block.shape[1] - START - DISTANCE_WINDOW + 1
+        return _position_metrics(ch1, ch2, self.params.fix_distance_loop, 0, count)
+
+    def extract_blocks(
+        self,
+        block: np.ndarray,
+        offsets: Sequence[int],
+        window_len: int,
+        context: np.ndarray | None = None,
+    ) -> FeatureMatrix:
+        """Features of the windows `[o, o + window_len)` inside one split block.
+
+        Inner-window metrics are computed once per packet position and shared by the windows
+        that contain them; the output equals `extract` on the same slices exactly. `context`
+        is `compute_context(block)` for the whole block, possibly cached; offsets are relative
+        to the block start either way.
+        """
+        if not offsets:
+            raise ExtractorError("paper_beamforming received no windows")
+        if block.shape[0] != 2 or window_len < MIN_WINDOW_LEN:
+            raise ExtractorError(
+                f"paper_beamforming needs 2 antennas and window_len >= {MIN_WINDOW_LEN}, "
+                f"got block {block.shape} and window_len {window_len}"
+            )
+        n_metric = window_len - START - DISTANCE_WINDOW + 1
+        first, last = min(offsets), max(offsets)
+        if first < 0 or last + window_len > block.shape[1]:
+            raise ExtractorError(f"window offsets {first}..{last} fall outside the block")
+        if context is None:
+            ch1 = block[0].astype(np.complex128)
+            ch2 = block[1].astype(np.complex128)
+            metrics = _position_metrics(
+                ch1, ch2, self.params.fix_distance_loop, first, last - first + n_metric
+            )
+            base = first
+        else:
+            if context.shape != (6, block.shape[1] - START - DISTANCE_WINDOW + 1):
+                raise ExtractorError(f"context shape {context.shape} does not match the block")
+            metrics = context
+            base = 0
+        rows = [_reduce(metrics, o - base, n_metric) for o in offsets]
         return FeatureMatrix(values=np.asarray(rows, dtype=np.float32), feature_names=NAMES)

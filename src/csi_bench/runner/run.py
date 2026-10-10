@@ -3,26 +3,34 @@
 import importlib.metadata
 import json
 import logging
+import multiprocessing
+import os
 import random
+import resource
 import subprocess
 import sys
+import threading
 import time
 import traceback
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import joblib
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 import torch
 import yaml
 
+from csi_bench.adapters.storage.context_cache import NpzContextCache
 from csi_bench.adapters.storage.feature_cache import NpzFeatureCache
 from csi_bench.config.experiment import (
     ExperimentConfig,
     compute_run_id,
+    context_cache_key,
     feature_cache_key,
     load_config,
     save_config,
@@ -33,7 +41,7 @@ from csi_bench.core import results_schema as rs
 from csi_bench.core.contracts import FeatureMatrix, Predictions, Recording, WindowSet
 from csi_bench.core.errors import ConfigError, DataError, ExtractorError
 from csi_bench.core.metrics import evaluate
-from csi_bench.core.ports import FeatureCache
+from csi_bench.core.ports import ContextCache, FeatureCache
 from csi_bench.core.preprocess import run_chain
 from csi_bench.core.splitplan import PARTS, find_split, load_split_plan
 from csi_bench.core.windows import build_windows
@@ -44,6 +52,162 @@ DEVICE = "cpu"
 TORCH_THREADS = 1
 DEFAULT_ROOT = "runs"
 DEFAULT_CACHE_ROOT = ".cache/features"
+WORKERS_ENV = "CSI_BENCH_WORKERS"
+DEFAULT_MAX_WORKERS = 4
+
+
+def resolve_workers(value: int | str | None = None) -> int:
+    """Runner-owned worker count: `--workers`, else `CSI_BENCH_WORKERS`, else min(4, cpus)."""
+    source, raw = "--workers", value
+    if raw is None:
+        source, raw = f"environment variable {WORKERS_ENV}", os.environ.get(WORKERS_ENV)
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return max(1, min(DEFAULT_MAX_WORKERS, os.cpu_count() or 1))
+    try:
+        count = int(raw)
+    except (TypeError, ValueError):
+        raise ConfigError(f"{source}: expected a positive integer, got {raw!r}") from None
+    if count < 1:
+        raise ConfigError(f"{source}: expected a positive integer, got {raw!r}")
+    return count
+
+
+def _peak_rss_mb() -> tuple[float, float]:
+    """This process's peak RSS and the largest peak RSS of any terminated child, in MiB.
+
+    `RUSAGE_CHILDREN` reports the maximum over all waited-for children (cumulative
+    across the run), not the sum of live workers, so the child figure is a floor.
+    """
+    own = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    children = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+    return own / 1024, children / 1024
+
+
+def _fork_is_safe(log: logging.Logger) -> bool:
+    """Forking a multi-threaded process can deadlock; stay in-process when threads are live."""
+    threads = threading.active_count()
+    if threads > 1:
+        log.warning(
+            "workers>1 requested but %d threads are live; extracting in-process to avoid "
+            "a fork deadlock",
+            threads,
+        )
+        return False
+    return True
+
+
+# Set in the parent right before the pool forks, so workers share the recordings copy-on-write.
+_FORK_STATE: tuple[Any, Any, dict[str, Recording]] | None = None
+
+
+def _extract_chunk(bounds: tuple[int, int]) -> FeatureMatrix:
+    assert _FORK_STATE is not None
+    extractor, windows, by_id = _FORK_STATE
+    start, stop = bounds
+    return extractor.extract(
+        [by_id[w.recording_id].csi[:, w.start : w.end, :] for w in windows[start:stop]]
+    )
+
+
+def _chunk_bounds(n_items: int, n_chunks: int) -> list[tuple[int, int]]:
+    """Contiguous, ordered, near-equal [start, stop) ranges; never more chunks than items."""
+    n_chunks = max(1, min(n_chunks, n_items))
+    edges = [n_items * i // n_chunks for i in range(n_chunks + 1)]
+    return list(zip(edges[:-1], edges[1:], strict=True))
+
+
+def _extract_blocks(
+    extractor: Any,
+    windows: Any,
+    by_id: Any,
+    block_context: Callable[[str, str], np.ndarray | None] | None = None,
+    bounds: Mapping[str, Mapping[str, tuple[int, int]]] | None = None,
+) -> FeatureMatrix:
+    """Block-aware extraction: one call per (recording, split) block, rows in window order.
+
+    With `block_context` and the plan's block `bounds`, the extractor gets its whole-block
+    intermediates for `(recording_id, split)` and offsets are relative to the block start.
+    """
+    groups: dict[tuple[str, str], list[int]] = {}
+    for i, w in enumerate(windows):
+        groups.setdefault((w.recording_id, w.split), []).append(i)
+    values = np.empty((len(windows), 0), dtype=np.float32)
+    names: tuple[str, ...] | None = None
+    for indices in groups.values():
+        members = [windows[i] for i in indices]
+        window_len = members[0].end - members[0].start
+        recording_id, split = members[0].recording_id, members[0].split
+        context = None
+        if block_context is not None and bounds is not None:
+            start, end = bounds[recording_id][split]
+            context = block_context(recording_id, split)
+        else:
+            start = min(w.start for w in members)
+            end = max(w.end for w in members)
+        block = by_id[recording_id].csi[:, start:end, :]
+        offsets = [w.start - start for w in members]
+        if context is None:
+            part = extractor.extract_blocks(block, offsets, window_len)
+        else:
+            part = extractor.extract_blocks(block, offsets, window_len, context=context)
+        if names is None:
+            names = part.feature_names
+            values = np.empty((len(windows), part.values.shape[1]), dtype=np.float32)
+        elif part.feature_names != names:
+            raise ExtractorError("extractor returned different feature names across blocks")
+        values[indices] = part.values
+    if names is None:
+        raise ExtractorError("no windows to extract")
+    return FeatureMatrix(values=values, feature_names=names)
+
+
+def _block_context_getter(
+    config: ExperimentConfig,
+    spec: Any,
+    fitted: Sequence[dict],
+    extractor: Any,
+    by_id: dict[str, Recording],
+    bounds: Mapping[str, Mapping[str, tuple[int, int]]],
+    cache: ContextCache,
+    log: logging.Logger,
+) -> Callable[[str, str], np.ndarray | None]:
+    """Get-or-compute one block's extractor intermediates through the runner-owned cache."""
+    counts = {"hit": 0, "miss": 0}
+
+    def get(recording_id: str, split: str) -> np.ndarray:
+        rec = by_id[recording_id]
+        start, end = bounds[recording_id][split]
+        key = context_cache_key(
+            config, spec, fitted, recording_id, rec.meta.source_sha256, (start, end)
+        )
+        context = cache.get(key)
+        if context is not None:
+            counts["hit"] += 1
+            return context
+        counts["miss"] += 1
+        context = extractor.compute_context(rec.csi[:, start:end, :])
+        cache.put(key, context)
+        log.info("block context %s %s:%s computed", spec.name, recording_id, split)
+        return context
+
+    return get
+
+
+def _extract_parallel(extractor: Any, windows: Any, by_id: Any, workers: int) -> FeatureMatrix:
+    global _FORK_STATE
+    bounds = _chunk_bounds(len(windows), workers)
+    _FORK_STATE = (extractor, windows, by_id)
+    try:
+        with ProcessPoolExecutor(
+            max_workers=len(bounds), mp_context=multiprocessing.get_context("fork")
+        ) as pool:
+            parts = list(pool.map(_extract_chunk, bounds))
+    finally:
+        _FORK_STATE = None
+    names = parts[0].feature_names
+    if any(part.feature_names != names for part in parts):
+        raise ExtractorError("extractor returned different feature names across chunks")
+    return FeatureMatrix(values=np.vstack([part.values for part in parts]), feature_names=names)
 
 
 def _now() -> str:
@@ -191,6 +355,9 @@ def _extract(
     fitted: Sequence[dict],
     log: logging.Logger,
     cache_report: list[dict[str, Any]],
+    workers: int = 1,
+    context_cache: ContextCache | None = None,
+    bounds: Mapping[str, Mapping[str, tuple[int, int]]] | None = None,
 ) -> FeatureMatrix:
     """Per extractor: load its matrix from the cache or compute it from its windows' slices."""
     window_ids = [w.window_id for w in windows]
@@ -202,11 +369,40 @@ def _extract(
         matrix = cache.get(key, window_ids)
         hit = matrix is not None
         if matrix is None:
-            if slices is None:
-                slices = [by_id[w.recording_id].csi[:, w.start : w.end, :] for w in windows]
             cls: Any = registry.get("extractor", spec.name)
             extractor = cls(cls.Params(**spec.params))
-            matrix = extractor.extract(slices)
+            began = time.monotonic()
+            if getattr(extractor, "uses_context", False):
+                block_context = None
+                if (
+                    context_cache is not None
+                    and bounds is not None
+                    and hasattr(extractor, "compute_context")
+                ):
+                    block_context = _block_context_getter(
+                        config, spec, fitted, extractor, by_id, bounds, context_cache, log
+                    )
+                matrix = _extract_blocks(extractor, windows, by_id, block_context, bounds)
+                path = "blocks"
+            elif workers > 1 and len(windows) > 1 and _fork_is_safe(log):
+                matrix = _extract_parallel(extractor, windows, by_id, workers)
+                path = "parallel"
+            else:
+                if slices is None:
+                    slices = [by_id[w.recording_id].csi[:, w.start : w.end, :] for w in windows]
+                path = "slices"
+                matrix = extractor.extract(slices)
+            own, children = _peak_rss_mb()
+            log.info(
+                "extraction %s: %.2fs path=%s configured_workers=%d "
+                "peak_rss_mb=%.0f max_child_peak_rss_mb=%.0f",
+                spec.name,
+                time.monotonic() - began,
+                path,
+                workers,
+                own,
+                children,
+            )
             cache.put(key, matrix, window_ids)
         log.info("feature cache %s %s key=%s", "hit" if hit else "miss", spec.name, key)
         cache_report.append({"extractor": spec.name, "key": key, "hit": hit})
@@ -345,6 +541,7 @@ def _execute(
     root: str | Path,
     cache_root: str | Path = DEFAULT_CACHE_ROOT,
     force: bool = False,
+    workers: int = 1,
 ) -> None:
     previous = {} if force else _completed_seeds(config, run_id, root)
     todo = [seed for seed in config.seeds if seed not in previous]
@@ -369,7 +566,9 @@ def _execute(
         _setup_runtime()
         dataset_cls: Any = registry.get("dataset", config.dataset)
         source = dataset_cls(dataset_cls.Params())
+        stage = time.monotonic()
         recordings = source.load()
+        log.info("stage load: %.2fs", time.monotonic() - stage)
         plan = load_split_plan(find_split(config.dataset, config.split), recordings)
         class_names = tuple(source.classes)
 
@@ -380,11 +579,13 @@ def _execute(
                 f"selection.rooms: unknown {unknown}; dataset rooms: {sorted(known_rooms)}"
             )
         selected = [r for r in recordings if r.room in set(config.selection.rooms)]
+        stage = time.monotonic()
         steps = []
         for spec in config.preprocessing:
             step_cls: Any = registry.get("preprocess", spec.name)
             steps.append(step_cls(step_cls.Params(**spec.params)))
         selected, fitted = run_chain(steps, selected, plan.blocks)
+        log.info("stage preprocess: %.2fs", time.monotonic() - stage)
         by_id = {rec.recording_id: rec for rec in selected}
         _validate_extractors(config, selected)
         windows = build_windows(
@@ -398,6 +599,7 @@ def _execute(
                 )
         log.info("windows=%d rooms=%s", len(windows), config.selection.rooms)
         cache_report: list[dict[str, Any]] = []
+        stage = time.monotonic()
         matrix = _extract(
             config,
             windows,
@@ -407,7 +609,11 @@ def _execute(
             fitted,
             log,
             cache_report,
+            workers,
+            NpzContextCache(Path(cache_root) / "context"),
+            plan.blocks,
         )
+        log.info("stage extract: %.2fs", time.monotonic() - stage)
 
         labels = np.array([by_id[w.recording_id].label for w in windows])
         index_by_split = {
@@ -423,21 +629,24 @@ def _execute(
         seed_selection: dict[int, dict] = {
             seed: rec["selection"] for seed, rec in previous.items() if "selection" in rec
         }
-        for seed in todo:
-            _seed_everything(seed)
-            fresh[seed], seed_names[seed], chosen = _run_seed(
-                config,
-                seed,
-                matrix,
-                labels,
-                windows,
-                index_by_split,
-                class_names,
-                run_id,
-                root,
-            )
-            if chosen is not None:
-                seed_selection[seed] = chosen
+        stage = time.monotonic()
+        with joblib.parallel_config(n_jobs=workers):
+            for seed in todo:
+                _seed_everything(seed)
+                fresh[seed], seed_names[seed], chosen = _run_seed(
+                    config,
+                    seed,
+                    matrix,
+                    labels,
+                    windows,
+                    index_by_split,
+                    class_names,
+                    run_id,
+                    root,
+                )
+                if chosen is not None:
+                    seed_selection[seed] = chosen
+        log.info("stage head fit and evaluate: %.2fs", time.monotonic() - stage)
         per_seed = {
             seed: fresh[seed]
             if seed in fresh
@@ -462,7 +671,13 @@ def _execute(
             finished_at=_now(),
             seeds=list(config.seeds),
         )
-        log.info("done in %.2fs", time.monotonic() - started)
+        own, children = _peak_rss_mb()
+        log.info(
+            "done in %.2fs peak_rss_mb=%.0f max_child_peak_rss_mb=%.0f",
+            time.monotonic() - started,
+            own,
+            children,
+        )
     except Exception as e:
         log.error("failed: %s\n%s", e, traceback.format_exc())
         _write_status(
@@ -484,8 +699,14 @@ def run(
     config_path: str | Path,
     root: str | Path = DEFAULT_ROOT,
     cache_root: str | Path = DEFAULT_CACHE_ROOT,
+    workers: int | str | None = None,
 ) -> int:
     """Validate, execute and store one experiment; return the CLI exit code."""
+    try:
+        count = resolve_workers(workers)
+    except ConfigError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 2
     try:
         discover()
     except (ImportError, ConfigError) as e:
@@ -498,7 +719,7 @@ def run(
         sys.stderr.write(f"error: {e}\n")
         return 2
     try:
-        _execute(config, config_path, run_id, root, cache_root)
+        _execute(config, config_path, run_id, root, cache_root, workers=count)
     except Exception as e:  # noqa: BLE001 - the run boundary maps every error to exit 2
         sys.stderr.write(f"error: {e}\n")
         return 2
@@ -526,11 +747,17 @@ def run_sweep(
     force: bool = False,
     root: str | Path = DEFAULT_ROOT,
     cache_root: str | Path = DEFAULT_CACHE_ROOT,
+    workers: int | str | None = None,
 ) -> int:
     """Expand a sweep file, validate every config, then run them one at a time.
 
     Exit code: 0 all fine, 1 some run failed, 2 the sweep itself is invalid.
     """
+    try:
+        count = resolve_workers(workers)
+    except ConfigError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 2
     try:
         discover()
     except (ImportError, ConfigError) as e:
@@ -555,7 +782,15 @@ def run_sweep(
             sys.stdout.write(f"{run_id} skipped\n")
             continue
         try:
-            _execute(config, path, run_id, root, cache_root, force=action == "rerun" or force)
+            _execute(
+                config,
+                path,
+                run_id,
+                root,
+                cache_root,
+                force=action == "rerun" or force,
+                workers=count,
+            )
         except Exception as e:  # noqa: BLE001 - one failed run must not stop the sweep
             sys.stderr.write(f"error: {run_id}: {e}\n")
             sys.stdout.write(f"{run_id} failed\n")

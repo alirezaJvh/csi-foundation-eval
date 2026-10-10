@@ -35,6 +35,16 @@ class FeatureExtractor(Protocol):
         """Return features for the given complex64 `(antennas, packets, subcarriers)` slices."""
         ...
 
+    # Optional. An extractor with `uses_context = True` also implements
+    #     extract_blocks(block, offsets, window_len) -> FeatureMatrix
+    # where `block` is one split block `(antennas, packets, subcarriers)` and the windows are
+    # `[o, o + window_len)` for each block-relative offset `o`. It may share per-packet
+    # intermediates across overlapping windows; its output must equal `extract` on the same
+    # slices exactly (contract test). The runner calls it per block, never across a split gap.
+    # It may also offer `compute_context(block) -> np.ndarray` (intermediates of the whole block,
+    # independent of window length, stride and room set); the runner then caches them per block
+    # and passes them back as `extract_blocks(..., context=...)`, which must give the same output.
+
 
 class Head(Protocol):
     """Classifier that tunes on val, refits on train ∪ val and predicts once (AD-11)."""
@@ -103,6 +113,18 @@ class FeatureCache(Protocol):
         ...
 
     def put(self, key: str, matrix: FeatureMatrix, window_ids: Sequence[str]) -> None:
+        """Store atomically; a failed write leaves no entry."""
+        ...
+
+
+class ContextCache(Protocol):
+    """Runner-owned store of one block's extractor intermediates (AD-10)."""
+
+    def get(self, key: str) -> np.ndarray | None:
+        """Return the cached array; a corrupt entry is a miss."""
+        ...
+
+    def put(self, key: str, values: np.ndarray) -> None:
         """Store atomically; a failed write leaves no entry."""
         ...
 

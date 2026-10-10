@@ -114,9 +114,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     d.add_argument("--split", help="split hash to use when several plans exist")
     r = sub.add_parser("run", help="run one experiment config and store its result")
     r.add_argument("config", help="path to an ExperimentConfig YAML file")
+    r.add_argument(
+        "--workers",
+        help="worker processes/threads (default: $CSI_BENCH_WORKERS or min(4, CPU count))",
+    )
     w = sub.add_parser("sweep", help="expand a sweep file and run every config sequentially")
     w.add_argument("file", help="path to a base config YAML with a `sweep:` block")
     w.add_argument("--force", action="store_true", help="re-execute every run")
+    w.add_argument(
+        "--workers",
+        help="worker processes/threads (default: $CSI_BENCH_WORKERS or min(4, CPU count))",
+    )
     p = sub.add_parser("report", help="refresh runs/index.parquet and print the comparison table")
     p.add_argument("--runs", default="runs", help="results directory")
     p.add_argument("--all-variants", action="store_true", help="list every run's variant")
@@ -127,9 +135,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SystemExit as e:
         return e.code if isinstance(e.code, int) else 2
     if args.command == "run":
-        return run(args.config)
+        return run(args.config, workers=args.workers)
     if args.command == "sweep":
-        return run_sweep(args.file, args.force)
+        return run_sweep(args.file, args.force, workers=args.workers)
     if args.command == "report":
         return report(args.runs, args.all_variants, args.include_dirty, args.reference)
     return describe(args.dataset, args.split)

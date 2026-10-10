@@ -289,6 +289,51 @@ def feature_cache_key(
     return sha256_hex(body)
 
 
+def context_cache_key(
+    config: ExperimentConfig,
+    spec: AdapterSpec,
+    fitted: Sequence[Mapping[str, Any]],
+    recording_id: str,
+    source_sha256: str,
+    block: tuple[int, int],
+) -> str:
+    """Content key of one extractor's per-block intermediates (AD-10).
+
+    Unlike `feature_cache_key` it has no rooms, `window_len` or `stride`, so every window
+    length and room set that includes this block shares the entry.
+    """
+    dataset_cls = _check_adapter("dataset", AdapterSpec(name=config.dataset), "dataset")
+    steps = []
+    for i, step in enumerate(config.preprocessing):
+        cls = _check_adapter("preprocess", step, f"preprocessing.{i}")
+        steps.append(
+            {
+                "name": step.name,
+                "version": cls.VERSION,
+                "params": registry.affecting_params(cls.Params(**step.params)),
+            }
+        )
+    ext_cls = _check_adapter("extractor", spec, f"extractor {spec.name}")
+    return sha256_hex(
+        {
+            "kind": "context",
+            "dataset": config.dataset,
+            "dataset_version": dataset_cls.VERSION,
+            "recording_id": recording_id,
+            "source_sha256": source_sha256,
+            "block": list(block),
+            "preprocessing": steps,
+            "fitted_hash": sha256_hex(list(fitted)),
+            "extractor": {
+                "name": spec.name,
+                "params": registry.affecting_params(ext_cls.Params(**spec.params)),
+                "version": ext_cls.VERSION,
+                "vendor_hash": getattr(ext_cls, "VENDOR_HASH", None),
+            },
+        }
+    )
+
+
 def compute_run_id(config: ExperimentConfig, split_root: str | Path = "splits") -> str:
     """Short hash of the resolved config plus adapter `VERSION`s, excluding `seeds` (AD-5)."""
     return short_hash(resolved_body(config, split_root))

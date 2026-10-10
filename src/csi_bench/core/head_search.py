@@ -3,11 +3,17 @@
 from collections.abc import Callable, Sequence
 from typing import Any
 
+import joblib
 import numpy as np
 from sklearn.metrics import f1_score
 from sklearn.preprocessing import StandardScaler
 
 from csi_bench.core.contracts import FeatureMatrix
+
+
+def _val_score(make: Callable[[], Any], x_train, y_train, x_val, y_val) -> float:
+    model = make().fit(x_train, y_train)
+    return float(f1_score(y_val, model.predict(x_val), average="macro", zero_division=0))
 
 
 def tune_and_refit(
@@ -29,10 +35,12 @@ def tune_and_refit(
     scaler = StandardScaler().fit(train.values)
     x_train = scaler.transform(train.values)
     x_val = scaler.transform(val.values)
+    # Candidates are independent; the worker count comes from the runner's joblib config.
+    scores = joblib.Parallel()(
+        joblib.delayed(_val_score)(make, x_train, y_train, x_val, y_val) for make in candidates
+    )
     best_index, best_f1 = 0, -1.0
-    for index, make in enumerate(candidates):
-        model = make().fit(x_train, y_train)
-        score = float(f1_score(y_val, model.predict(x_val), average="macro", zero_division=0))
+    for index, score in enumerate(scores):
         if score > best_f1:
             best_index, best_f1 = index, score
     # The final model sees train ∪ val, so its scaler is fitted on the same rows.

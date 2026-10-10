@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-07-2026 09:00
-last_updated: 10-10-2026
+last_updated: 2026-10-10
 project: master
 project_key: NOKEY
 tracking_system: file-system
@@ -51,7 +51,9 @@ development_status:
   2-6-feature-selection-manual-subsets-and-mrmr: done
   2-7-sweeps-and-the-python-experiment-builder: done
   2-8-comparison-report-and-notebook-results-api: done
-  2-9-faster-feature-extraction-and-head-training: backlog
+  2-9-faster-feature-extraction-and-head-training: in-progress
+  2-10-compute-paper-beamforming-inner-metrics-once-per-packet: done
+  2-11-share-paper-beamforming-per-position-metrics-across-the-sweep: review
   epic-2-retrospective: optional
 
   epic-3: backlog

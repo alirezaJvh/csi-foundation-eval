@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sweep speed-up, explained</title>
+<style>
+:root{--bg:#fafaf7;--fg:#1d1d1b;--mut:#5f5f5a;--card:#fff;--line:#d9d8d0;--a:#2457c5;--b:#b4561b;--ok:#1f7a45;--bad:#b3261e;--fill1:#e8eefb;--fill2:#fdeede;--fill3:#e3f3ea;--fill4:#fbe7e5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17171a;--fg:#ececea;--mut:#a3a39d;--card:#1f1f23;--line:#3a3a40;--a:#7ea3f2;--b:#f0a46b;--ok:#6fcf97;--bad:#f28b82;--fill1:#1f2a44;--fill2:#3a2a1a;--fill3:#1c3326;--fill4:#3d2220}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:920px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:1.7rem;margin:.2em 0}
+h2{font-size:1.25rem;margin:2em 0 .4em;border-top:1px solid var(--line);padding-top:1em}
+p,li{max-width:70ch}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+svg{width:100%;height:auto;display:block}
+svg text{fill:var(--fg);font:13px system-ui,sans-serif}
+svg .box{stroke:var(--line);stroke-width:1.2}
+svg .arrow{stroke:var(--mut);stroke-width:1.5;fill:none}
+svg .hot{stroke:var(--bad);stroke-width:2}
+table{border-collapse:collapse;width:100%;font-size:.95rem}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}
+th{color:var(--mut);font-weight:600}
+.bar{height:16px;border-radius:4px;display:inline-block;vertical-align:middle}
+.tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:.8rem;border:1px solid var(--line);color:var(--mut)}
+code{background:var(--fill1);padding:1px 5px;border-radius:4px;font-size:.9em}
+.ok{color:var(--ok);font-weight:600}.bad{color:var(--bad);font-weight:600}
+</style>
+</head>
+<body>
+<main>
+<h1>Making the sweep faster without changing any result</h1>
+<p class="mut">Optional follow-up (a possible Story 2.11) after Story 2.10. All times are rough estimates from the measured run (window_len 20, r1, svm: extraction 365 s, head 20 s). Nothing here has been built yet.</p>
+
+<div class="card"><b>Rule for both ideas:</b> every run must produce the same numbers as today. Only <em>who computes what, and when</em> changes. Section 4 says how that is checked.</div>
+
+<h2>1. What happens today</h2>
+<p><code>csi-bench sweep</code> runs the 216 runs <b>one after another in one process</b>. Each run does: load, preprocess, extract features (from cache if it exists), then fit the head. The feature cache is keyed per extractor, window length and room set. Two things are wasteful:</p>
+<ul>
+<li><b>Same work, repeated.</b> <code>paper_beamforming</code> is computed 12 times (4 window lengths × 3 room sets). Its slow part, the per-position metrics, does not depend on window length and not on which rooms you pick, yet it is recomputed each time.</li>
+<li><b>Idle CPU.</b> The machine has 16 threads. <code>svm</code> uses one core, and only one run is active at a time, so most cores wait.</li>
+</ul>
+
+<svg viewBox="0 0 860 250" role="img" aria-label="Current flow: one process, runs in sequence, each recomputing paper_beamforming metrics">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--mut)"/></marker></defs>
+<rect class="box" x="10" y="20" width="130" height="50" rx="8" fill="var(--fill1)"/><text x="75" y="50" text-anchor="middle">sweep (1 process)</text>
+<path class="arrow" d="M140 45H175" marker-end="url(#ah)"/>
+<g>
+<rect class="box" x="180" y="10" width="150" height="70" rx="8" fill="var(--fill1)"/><text x="255" y="32" text-anchor="middle">run 1: L=20, r1</text><text x="255" y="52" text-anchor="middle">extract 6 min</text><text x="255" y="68" text-anchor="middle">head</text>
+<path class="arrow" d="M330 45H350" marker-end="url(#ah)"/>
+<rect class="box" x="355" y="10" width="150" height="70" rx="8" fill="var(--fill1)"/><text x="430" y="32" text-anchor="middle">run 2: L=20, r2</text><text x="430" y="52" text-anchor="middle">extract 6 min</text><text x="430" y="68" text-anchor="middle">head</text>
+<path class="arrow" d="M505 45H525" marker-end="url(#ah)"/>
+<rect class="box" x="530" y="10" width="150" height="70" rx="8" fill="var(--fill1)"/><text x="605" y="32" text-anchor="middle">run 3: L=30, r1</text><text x="605" y="52" text-anchor="middle">extract 6 min again</text><text x="605" y="68" text-anchor="middle">head</text>
+<path class="arrow" d="M680 45H700" marker-end="url(#ah)"/>
+<text x="740" y="50">… 216 runs</text>
+</g>
+<rect class="box hot" x="180" y="110" width="500" height="44" rx="8" fill="var(--fill4)"/>
+<text x="430" y="130" text-anchor="middle">same per-packet metrics recomputed for every window length</text>
+<text x="430" y="146" text-anchor="middle">and for r1+r2 (which is just r1 + r2)</text>
+<rect class="box hot" x="180" y="175" width="500" height="44" rx="8" fill="var(--fill4)"/>
+<text x="430" y="195" text-anchor="middle">only one run active, svm uses one core</text>
+<text x="430" y="211" text-anchor="middle">other cores idle</text>
+</svg>
+
+<h2>2. Idea A: compute the per-packet metrics once and reuse them</h2>
+<p>Story 2.10 already computes, for every packet position in a block, six numbers (doppler, distance, flatness). Each number depends only on the packets at that position. A window just takes a slice of them and runs <code>var</code> / <code>mean</code>.</p>
+<p>So the per-position arrays do not depend on <code>window_len</code>, and r1+r2 is the union of the r1 and r2 blocks. Store these arrays once in the runner-owned cache, keyed by recording block, <code>fix_distance_loop</code> and extractor <code>VERSION</code>. Each run then only slices (seconds).</p>
+
+<div class="grid">
+<div class="card"><b>Today</b>
+<svg viewBox="0 0 400 230" role="img" aria-label="Today: each of 12 combinations recomputes metrics">
+<rect class="box" x="10" y="10" width="110" height="34" rx="6" fill="var(--fill1)"/><text x="65" y="32" text-anchor="middle">L=20 r1</text>
+<rect class="box" x="10" y="52" width="110" height="34" rx="6" fill="var(--fill1)"/><text x="65" y="74" text-anchor="middle">L=20 r2</text>
+<rect class="box" x="10" y="94" width="110" height="34" rx="6" fill="var(--fill1)"/><text x="65" y="116" text-anchor="middle">L=20 r1+r2</text>
+<rect class="box" x="10" y="136" width="110" height="34" rx="6" fill="var(--fill1)"/><text x="65" y="158" text-anchor="middle">L=30 … 50</text>
+<path class="arrow" d="M120 27H170M120 69H170M120 111H170M120 153H170" marker-end="url(#ah)"/>
+<rect class="box hot" x="175" y="10" width="215" height="160" rx="8" fill="var(--fill4)"/>
+<text x="282" y="80" text-anchor="middle">compute per-position</text><text x="282" y="98" text-anchor="middle">metrics (slow)</text>
+<text x="282" y="124" text-anchor="middle" class="bad">12 times</text>
+<text x="200" y="205">≈ 1.6 h of extraction</text>
+</svg></div>
+<div class="card"><b>Proposed</b>
+<svg viewBox="0 0 400 230" role="img" aria-label="Proposed: metrics computed once for r1 and r2 then sliced by each run">
+<rect class="box" x="10" y="20" width="150" height="46" rx="8" fill="var(--fill3)"/><text x="85" y="40" text-anchor="middle">r1 blocks</text><text x="85" y="57" text-anchor="middle">metrics once, cached</text>
+<rect class="box" x="10" y="80" width="150" height="46" rx="8" fill="var(--fill3)"/><text x="85" y="100" text-anchor="middle">r2 blocks</text><text x="85" y="117" text-anchor="middle">metrics once, cached</text>
+<path class="arrow" d="M160 43H200M160 103H200" marker-end="url(#ah)"/>
+<rect class="box" x="205" y="20" width="185" height="106" rx="8" fill="var(--fill3)"/>
+<text x="297" y="52" text-anchor="middle">each of 12 runs:</text><text x="297" y="72" text-anchor="middle">take its slice,</text><text x="297" y="92" text-anchor="middle">var / mean (seconds)</text><text x="297" y="112" text-anchor="middle" class="ok">no recompute</text>
+<text x="15" y="165">≈ 12 min once + a few min slicing</text>
+<text x="15" y="185" class="ok">saves about 1.3–1.4 h</text>
+</svg></div>
+</div>
+<p class="mut">What changes in code: a second runner-owned cache entry for the per-position arrays, and an extractor method that accepts them. The current <code>extract_blocks</code> becomes "get arrays, then slice". The final feature matrix and its cache key stay the same.</p>
+
+<h2>3. Idea B: run several sweep processes at once</h2>
+<p>Runs are independent: each has its own config, seeds and run directory. So several worker processes can take runs from the same sweep file. What must be added is <b>coordination</b>, not new maths:</p>
+<ul>
+<li>a <b>claim lock</b> per run directory (atomic file create) so two workers never take the same run;</li>
+<li>a <b>lock per feature-cache key</b> so only one worker computes a missing matrix and the others wait for it (this is why do A first);</li>
+<li>safe updates of the sweep index / report inputs.</li>
+</ul>
+<svg viewBox="0 0 860 260" role="img" aria-label="Proposed parallel sweep with a shared queue, locks and cache">
+<rect class="box" x="10" y="95" width="150" height="60" rx="8" fill="var(--fill1)"/><text x="85" y="122" text-anchor="middle">sweep file</text><text x="85" y="140" text-anchor="middle">216 runs (queue)</text>
+<path class="arrow" d="M160 125H215" marker-end="url(#ah)"/>
+<rect class="box" x="220" y="95" width="150" height="60" rx="8" fill="var(--fill2)"/><text x="295" y="122" text-anchor="middle">claim lock</text><text x="295" y="140" text-anchor="middle">one worker per run</text>
+<path class="arrow" d="M370 110L440 40M370 125H440M370 140L440 210" marker-end="url(#ah)"/>
+<rect class="box" x="445" y="15" width="150" height="50" rx="8" fill="var(--fill3)"/><text x="520" y="44" text-anchor="middle">worker 1 (~1.5 GB)</text>
+<rect class="box" x="445" y="100" width="150" height="50" rx="8" fill="var(--fill3)"/><text x="520" y="129" text-anchor="middle">worker 2</text>
+<rect class="box" x="445" y="185" width="150" height="50" rx="8" fill="var(--fill3)"/><text x="520" y="214" text-anchor="middle">worker 3 (or 4)</text>
+<path class="arrow" d="M595 40H650M595 125H650M595 210H650" marker-end="url(#ah)"/>
+<rect class="box" x="655" y="15" width="190" height="220" rx="8" fill="var(--fill1)"/>
+<text x="750" y="75" text-anchor="middle">shared on disk</text>
+<text x="750" y="105" text-anchor="middle">feature cache (per-key lock)</text>
+<text x="750" y="130" text-anchor="middle">runs/&lt;run_id&gt;/ results</text>
+<text x="750" y="155" text-anchor="middle">sweep index</text>
+</svg>
+<p class="mut">Memory: about 1.3–1.5 GB per worker, so 3–4 workers fit in 11 GB. The knn and random-forest heads already use several cores, so they gain less than svm.</p>
+
+<h2>4. Why the results cannot change</h2>
+<ul>
+<li><b>Idea A:</b> the per-position arrays are the same numbers that are computed today, just stored once. Same check as in Story 2.10: the new feature matrix must equal the cached old one bit-for-bit, and an exact-equality test runs old path vs new path (both <code>fix_distance_loop</code> values, several window lengths, r1+r2). If it is not equal, the idea is dropped or a human decides.</li>
+<li><b>Idea B:</b> a run depends only on its own config and seeds, never on the order or on other runs. Check: run a small sweep serially and with 3 workers, then compare every <code>metrics.json</code> and <code>predictions.parquet</code> for equality. Run ids and cache keys do not change.</li>
+<li><b>Not used:</b> larger stride, float32 maths, smaller grids, other SVM libraries. Those would change the numbers.</li>
+</ul>
+
+<h2>5. Estimated gain</h2>
+<p class="mut">After the 2.10 head tweaks. Estimates: extraction assumes r2 is about the size of r1; head time is a guess because knn and random_forest were never timed.</p>
+<table>
+<thead><tr><th>Scenario</th><th>Extraction</th><th>Heads (216 runs)</th><th>Total</th></tr></thead>
+<tbody>
+<tr><td>Today</td><td>≈ 1.6 h</td><td>≈ 3–5 h</td><td><b>≈ 4.5–6.5 h</b> <span class="bar" style="width:200px;background:var(--b)"></span></td></tr>
+<tr><td>A only</td><td>≈ 0.25 h</td><td>≈ 3–5 h</td><td><b>≈ 3.3–5.3 h</b> <span class="bar" style="width:160px;background:var(--a)"></span></td></tr>
+<tr><td>B only (3–4 workers)</td><td>≈ 0.6–0.8 h</td><td>≈ 1.2–2.2 h</td><td><b>≈ 2–3 h</b> <span class="bar" style="width:90px;background:var(--a)"></span></td></tr>
+<tr><td>A + B</td><td>≈ 0.1 h</td><td>≈ 1.2–2.2 h</td><td><b>≈ 1.3–2.3 h</b> <span class="bar" style="width:65px;background:var(--ok)"></span></td></tr>
+</tbody>
+</table>
+<p>Order I would do them in: <b>A first</b> (self-contained, easy to verify exactly), then <b>B</b>. If extraction is still too slow after that, the optional math rewrite (compute each packet's amplitude and pair distances once; also exact if the sum order is kept) is a separate step.</p>
+</main>
+</body>
+</html>

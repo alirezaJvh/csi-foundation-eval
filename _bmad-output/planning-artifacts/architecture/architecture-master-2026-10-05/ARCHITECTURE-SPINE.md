@@ -161,7 +161,7 @@ flowchart TB
 - **Rule:**
   - `window_len` and `stride` are counted in packets. The default stride is 1.
   - Each window lies entirely inside one split block.
-  - The runner gives an extractor only the packet slice `[start, end)` of each window.
+  - The runner gives an extractor only the packet slice `[start, end)` of each window. An extractor that declares `uses_context = True` may instead receive a contiguous packet range inside one split block together with its windows' offsets (`extract_blocks`). The range never crosses a split gap, and a window's features may depend only on its own packets.
   - An extractor declares `min_window_len`. `window_len = 1` is valid only for per-packet extractors.
   - Extractors and poolers never create, drop or shift windows. A window an extractor can't process makes the run fail.
   - For a given `(split_hash, selection, window_len, stride)`, every model sees the same `window_id`s.
@@ -174,7 +174,8 @@ flowchart TB
   - Each extractor declares:
     - `granularity: per_packet | per_window`
     - `requires: {phase: bool, n_antennas: int | "any"}`, which the runner checks during config validation
-  - Extractors are pure per input: processing a window alone gives the same features as processing it in a batch, and they compute no statistics across windows.
+    - `uses_context: bool` (default `false`), for extractors that offer the block-aware path
+  - Extractors are pure per input: processing a window alone gives the same features as processing it in a batch or inside a block, and they compute no statistics across windows. Sharing intermediate results between overlapping windows (such as `paper_beamforming`'s per-packet inner metrics) is allowed only through `extract_blocks`, and a contract test asserts that it equals the slice-based `extract` exactly.
   - **Per-packet extractors** (LWM) return `PacketFeatures`. LWM's `embedding: cls | channel_mean` param selects the CLS token or the mean of the channel tokens. A `Pooler` (`mean`, `mean_std`, …) reduces each window's packets to one vector. Poolers have no trainable weights.
   - **Per-window extractors** (WavesFM, Mantis, ImageNet, and classical feature families such as `paper_beamforming` and `amplitude_stats`) return a `FeatureMatrix`, and their config must set `pooler: null`.
   - **Classical features are registered as families.** A family computes all of its features for a window in one pass and returns named columns; adding a feature means adding one function to its family. A run may list several families, and the runner concatenates their columns.
@@ -200,6 +201,7 @@ flowchart TB
 - **Rule:**
   - Only the runner reads and writes `FeatureCache`. Extractors never touch it.
   - The cache key hashes `{dataset, split_hash, selection, preprocessing chain + fitted-state hash, extractor name + params affecting results + VERSION + _vendor hash + weights revision}`. Per-window keys add `window_len` and `stride`.
+  - The runner may also store per-block intermediates offered by an extractor with `uses_context = True`, keyed per recording block (without `window_len`, `stride` or room set), with the same rules: one client, complete keys, atomic writes.
   - Writes are atomic (temp file, then rename).
   - Deleting `.cache/features` never changes a result.
 

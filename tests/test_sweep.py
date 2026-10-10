@@ -190,3 +190,43 @@ def test_git_unavailable_skips_dirty_done_runs(tmp_path, monkeypatch, capsys):
     assert calls == []
     out = capsys.readouterr().out
     assert "skipped" in out and "1 skipped" in out
+
+
+def test_running_status_is_rerun_on_resume(tmp_path, monkeypatch):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    path = _write(tmp_path, {"window_len": [40]})
+    assert main(["sweep", path]) == 0
+    (run_dir,) = _run_dirs(tmp_path)
+    status = run_dir / "status.json"
+    status.write_text(status.read_text().replace('"done"', '"running"'))
+    calls = []
+    original = run_module._execute
+    monkeypatch.setattr(
+        run_module, "_execute", lambda *a, **k: (calls.append(1), original(*a, **k))
+    )
+    assert main(["sweep", path]) == 0
+    assert calls == [1]
+    assert _status(run_dir)["status"] == "done"
+
+
+def test_sweep_forwards_workers(tmp_path, monkeypatch):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    path = _write(tmp_path, {"window_len": [40]})
+    seen: list[int | None] = []
+    monkeypatch.setattr(run_module, "_execute", lambda *a, **k: seen.append(k.get("workers")))
+    assert main(["sweep", path, "--workers", "3"]) == 0
+    assert seen == [3]
+
+
+def test_sweep_bad_worker_count_rejected_before_any_run(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    path = _write(tmp_path, {"window_len": [40]})
+    assert main(["sweep", path, "--workers", "0"]) == 2
+    assert "--workers" in capsys.readouterr().err
+    monkeypatch.setenv("CSI_BENCH_WORKERS", "abc")
+    assert main(["sweep", path]) == 2
+    assert "CSI_BENCH_WORKERS" in capsys.readouterr().err
+    assert _run_dirs(tmp_path) == []

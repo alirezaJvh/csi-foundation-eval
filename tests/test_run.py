@@ -47,6 +47,12 @@ def fresh_registry(monkeypatch):
     registry.reset()
 
 
+@pytest.fixture(autouse=True)
+def single_worker(monkeypatch):
+    """Spies on extractors need the in-process path; parallel tests pass workers explicitly."""
+    monkeypatch.setenv("CSI_BENCH_WORKERS", "1")
+
+
 def _make_project(tmp_path: Path, constant: bool = False, packets: int = 800) -> Path:
     data = tmp_path / "data/csi_proc_python/saved_csi"
     data.mkdir(parents=True)
@@ -843,3 +849,351 @@ def test_resume_keeps_feature_names(tmp_path, monkeypatch, capsys):
     assert seeds["1"]["feature_names"] == ["amplitude_stats.std"]
     assert seeds["0"]["selection"] == seeds["1"]["selection"]
     assert seeds["0"]["selection"]["chosen"] == 0
+
+
+def _run_capture(tmp_path, monkeypatch, label, workers, **changes):
+    """Run once into its own root/cache; return (feature matrix, metrics document)."""
+    from csi_bench.runner import run as run_module
+
+    captured = []
+    original = run_module._extract
+
+    def spy(*args, **kwargs):
+        matrix = original(*args, **kwargs)
+        captured.append(matrix)
+        return matrix
+
+    monkeypatch.setattr(run_module, "_extract", spy)
+    root = tmp_path / f"runs_{label}"
+    code = run(_config_file(tmp_path, **changes), root, tmp_path / f"cache_{label}", workers)
+    assert code == 0
+    (run_dir,) = [d for d in root.iterdir() if d.is_dir()]
+    metrics = json.loads((run_dir / "metrics.json").read_text())
+    return captured[-1], metrics
+
+
+def test_parallel_extraction_matches_single_process(tmp_path, monkeypatch):
+    from csi_bench.runner import run as run_module
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(run_module, "_fork_is_safe", lambda log: True)
+    calls: list[int] = []
+    original_parallel = run_module._extract_parallel
+
+    def spy_parallel(*args, **kwargs):
+        calls.append(1)
+        return original_parallel(*args, **kwargs)
+
+    monkeypatch.setattr(run_module, "_extract_parallel", spy_parallel)
+    changes = {"preprocessing": ["ant2"], "extractors": [{"name": "amplitude_stats"}]}
+    one, m_one = _run_capture(tmp_path, monkeypatch, "one", 1, **changes)
+    assert calls == []
+    many, m_many = _run_capture(tmp_path, monkeypatch, "many", 3, **changes)
+    assert calls == [1]
+    assert one.feature_names == many.feature_names
+    np.testing.assert_array_equal(one.values, many.values)
+    assert m_one["seeds"] == m_many["seeds"]
+
+
+def test_chunk_bounds_contiguous_and_capped():
+    from csi_bench.runner.run import _chunk_bounds
+
+    for n_items, n_chunks in [(10, 3), (2, 8), (7, 7), (100, 4)]:
+        bounds = _chunk_bounds(n_items, n_chunks)
+        assert len(bounds) == min(n_items, n_chunks)
+        assert bounds[0][0] == 0 and bounds[-1][1] == n_items
+        assert all(a < b for a, b in bounds)
+        assert all(x[1] == y[0] for x, y in zip(bounds, bounds[1:], strict=False))
+
+
+def test_few_windows_uses_fewer_chunks_in_order(monkeypatch):
+    import types
+
+    from csi_bench.core.contracts import FeatureMatrix
+    from csi_bench.runner import run as run_module
+
+    class Echo:
+        def extract(self, slices):
+            return FeatureMatrix(
+                values=np.array([[s[0, 0, 0].real] for s in slices], dtype=np.float32),
+                feature_names=("f",),
+            )
+
+    windows = [types.SimpleNamespace(recording_id="a", start=i, end=i + 1) for i in range(3)]
+    csi = np.arange(3, dtype=np.float32).reshape(1, 3, 1).astype(np.complex64)
+    by_id = {"a": types.SimpleNamespace(csi=csi)}
+    matrix = run_module._extract_parallel(Echo(), windows, by_id, 8)
+    assert matrix.values[:, 0].tolist() == [0.0, 1.0, 2.0]
+
+
+def test_extract_parallel_rejects_mismatched_feature_names():
+    import types
+
+    from csi_bench.core.contracts import FeatureMatrix
+    from csi_bench.core.errors import ExtractorError
+    from csi_bench.runner import run as run_module
+
+    class VaryingNames:
+        def extract(self, slices):
+            return FeatureMatrix(
+                values=np.zeros((len(slices), 1), dtype=np.float32),
+                feature_names=(f"c{len(slices)}",),
+            )
+
+    windows = [types.SimpleNamespace(recording_id="a", start=i, end=i + 1) for i in range(3)]
+    csi = np.arange(3, dtype=np.float32).reshape(1, 3, 1).astype(np.complex64)
+    by_id = {"a": types.SimpleNamespace(csi=csi)}
+    with pytest.raises(ExtractorError, match="different feature names"):
+        run_module._extract_parallel(VaryingNames(), windows, by_id, 2)
+
+
+def test_parallel_extraction_falls_back_when_threads_live(tmp_path, monkeypatch):
+    import threading
+
+    from csi_bench.runner import run as run_module
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    calls: list[int] = []
+    original = run_module._extract_parallel
+
+    def spy(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(run_module, "_extract_parallel", spy)
+    stop = threading.Event()
+    worker = threading.Thread(target=stop.wait)
+    worker.start()
+    try:
+        changes = {"preprocessing": ["ant2"], "extractors": [{"name": "amplitude_stats"}]}
+        _, metrics = _run_capture(tmp_path, monkeypatch, "threaded", 3, **changes)
+    finally:
+        stop.set()
+        worker.join()
+    assert calls == []
+    assert "seeds" in metrics
+
+
+def test_uses_context_extractor_dispatches_to_block_path(tmp_path, monkeypatch):
+    from csi_bench.adapters.extractors.paper_beamforming import PaperBeamforming
+    from csi_bench.runner import run as run_module
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    blocks: list[int] = []
+    original_blocks = run_module._extract_blocks
+
+    def spy_blocks(*args, **kwargs):
+        blocks.append(1)
+        return original_blocks(*args, **kwargs)
+
+    def no_slices(self, slices):
+        raise AssertionError("slice path used for a uses_context extractor")
+
+    monkeypatch.setattr(run_module, "_extract_blocks", spy_blocks)
+    monkeypatch.setattr(PaperBeamforming, "extract", no_slices)
+    matrix = _run_capture(
+        tmp_path,
+        monkeypatch,
+        "blocks",
+        1,
+        preprocessing=["ant2"],
+        extractors=[{"name": "paper_beamforming"}],
+    )[0]
+    assert blocks == [1]
+    assert matrix.values.shape[0] > 0
+
+
+@pytest.mark.parametrize("head", ["random_forest", "knn"])
+def test_head_metrics_equal_across_workers_and_see_jobs(tmp_path, monkeypatch, head):
+    import joblib
+
+    from csi_bench.adapters.heads.knn import Knn
+    from csi_bench.adapters.heads.random_forest import RandomForest
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    seen: list[int] = []
+    cls = {"random_forest": RandomForest, "knn": Knn}[head]
+    original = cls.fit
+
+    def spy(self, *args, **kwargs):
+        seen.append(joblib.effective_n_jobs(None))
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(cls, "fit", spy)
+    changes = {"head": {"name": head, "params": {}}}
+    if head == "random_forest":
+        changes["head"]["params"] = {"n_estimators_grid": [10], "max_depth_grid": [None]}
+    _, one = _run_capture(tmp_path, monkeypatch, "one", 1, **changes)
+    _, many = _run_capture(tmp_path, monkeypatch, "many", 3, **changes)
+    assert one["seeds"] == many["seeds"]
+    assert seen[0] == 1 and seen[-1] == 3
+
+
+def test_resolve_workers_sources(monkeypatch):
+    from csi_bench.core.errors import ConfigError
+    from csi_bench.runner.run import resolve_workers
+
+    monkeypatch.delenv("CSI_BENCH_WORKERS", raising=False)
+    assert 1 <= resolve_workers(None) <= 4
+    monkeypatch.setenv("CSI_BENCH_WORKERS", "2")
+    assert resolve_workers(None) == 2
+    assert resolve_workers("5") == 5
+    monkeypatch.setenv("CSI_BENCH_WORKERS", "x")
+    with pytest.raises(ConfigError, match="CSI_BENCH_WORKERS"):
+        resolve_workers(None)
+    with pytest.raises(ConfigError, match="--workers"):
+        resolve_workers("0")
+
+
+def test_bad_worker_count_rejected_before_any_run(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert main(["run", _config_file(tmp_path), "--workers", "0"]) == 2
+    assert "--workers" in capsys.readouterr().err
+    monkeypatch.setenv("CSI_BENCH_WORKERS", "abc")
+    assert main(["run", _config_file(tmp_path)]) == 2
+    assert "CSI_BENCH_WORKERS" in capsys.readouterr().err
+    assert _run_dirs(tmp_path) == []
+
+
+def test_extract_blocks_called_per_block_in_window_order():
+    import types
+
+    from csi_bench.core.contracts import FeatureMatrix
+    from csi_bench.runner import run as run_module
+
+    calls: list[tuple[int, list[int], int]] = []
+
+    class Ctx:
+        uses_context = True
+
+        def extract_blocks(self, block, offsets, window_len):
+            calls.append((block.shape[1], list(offsets), window_len))
+            return FeatureMatrix(
+                values=np.array([[block[0, o, 0].real] for o in offsets], dtype=np.float32),
+                feature_names=("f",),
+            )
+
+    def window(rec, split, start, length=2):
+        return types.SimpleNamespace(recording_id=rec, split=split, start=start, end=start + length)
+
+    # AD-4 order is (recording, start): train/val windows of one recording interleave by start
+    windows = [
+        window("a", "train", 0),
+        window("a", "train", 1),
+        window("a", "val", 10),
+        window("b", "train", 0),
+    ]
+    csi = np.arange(20, dtype=np.float32).reshape(1, 20, 1).astype(np.complex64)
+    by_id = {r: types.SimpleNamespace(csi=csi) for r in "ab"}
+    matrix = run_module._extract_blocks(Ctx(), windows, by_id)
+    assert matrix.values[:, 0].tolist() == [0.0, 1.0, 10.0, 0.0]
+    assert calls == [(3, [0, 1], 2), (2, [0], 2), (2, [0], 2)]
+
+
+def _shared_context_runs(tmp_path, monkeypatch, runs):
+    """Run `(window_len, stride, rooms)` configs against one cache; return matrices and the
+    number of `compute_context` calls after each run."""
+    from csi_bench.adapters.extractors.paper_beamforming import PaperBeamforming
+    from csi_bench.runner import run as run_module
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    computed: list[int] = []
+    original = PaperBeamforming.compute_context
+
+    def spy(self, block):
+        computed.append(1)
+        return original(self, block)
+
+    monkeypatch.setattr(PaperBeamforming, "compute_context", spy)
+    captured: list = []
+    extract = run_module._extract
+
+    def capture(*args, **kwargs):
+        captured.append(extract(*args, **kwargs))
+        return captured[-1]
+
+    monkeypatch.setattr(run_module, "_extract", capture)
+    counts = []
+    for i, (window_len, stride, rooms) in enumerate(runs):
+        config = _config_file(
+            tmp_path,
+            window_len=window_len,
+            stride=stride,
+            selection={"rooms": rooms},
+            preprocessing=["ant2"],
+            extractors=[{"name": "paper_beamforming"}],
+        )
+        assert run(config, tmp_path / f"runs_{i}", tmp_path / "cache", 1) == 0
+        counts.append(len(computed))
+    return captured, counts
+
+
+def test_block_arrays_shared_across_window_len_stride_and_rooms(tmp_path, monkeypatch):
+    runs = [(20, 1, ["r1"]), (30, 3, ["r1"]), (25, 1, ["r2"]), (20, 2, ["r1", "r2"])]
+    matrices, counts = _shared_context_runs(tmp_path, monkeypatch, runs)
+    # r1 has 4 recordings x 3 blocks, r2 the same; later runs compute nothing new
+    assert counts[0] > 0
+    assert counts[1] == counts[0]
+    assert counts[2] == 2 * counts[0]
+    assert counts[3] == counts[2]
+    assert len(list((tmp_path / "cache" / "context").glob("*.npz"))) == counts[3]
+
+
+def test_shared_arrays_equal_slice_path_exactly(tmp_path, monkeypatch):
+    from csi_bench.adapters.datasets.tor_vergata import TorVergata
+    from csi_bench.adapters.extractors.paper_beamforming import PaperBeamforming
+    from csi_bench.core.splitplan import find_split, load_split_plan
+    from csi_bench.core.windows import build_windows
+
+    runs = [(20, 1, ["r1"]), (30, 3, ["r1", "r2"])]
+    matrices, _ = _shared_context_runs(tmp_path, monkeypatch, runs)
+    data = tmp_path / "data/csi_proc_python/saved_csi"
+    recs = TorVergata(TorVergata.Params(root=str(data))).load()
+    plan = load_split_plan(find_split("tor_vergata", None, tmp_path / "splits"), recs)
+    for (window_len, stride, rooms), matrix in zip(runs, matrices, strict=True):
+        by_id = {r.recording_id: r for r in recs if r.room in rooms}
+        windows = build_windows(plan, list(by_id.values()), rooms, window_len, stride)
+        slices = [by_id[w.recording_id].csi[:2, w.start : w.end, :] for w in windows]
+        expected = PaperBeamforming().extract(slices)
+        np.testing.assert_array_equal(matrix.values, expected.values)
+
+
+def test_context_cache_key_ignores_window_stride_rooms_but_not_fitted_state():
+    from csi_bench.config.experiment import ExperimentConfig, context_cache_key
+    from csi_bench.core.contracts import FeatureMatrix  # noqa: F401
+    from csi_bench.runner.discover import discover
+
+    discover()
+    base = {**CONFIG, "preprocessing": ["ant2"], "extractors": [{"name": "paper_beamforming"}]}
+    a = ExperimentConfig.model_validate(base)
+    b = ExperimentConfig.model_validate(
+        {**base, "window_len": 20, "stride": 5, "selection": {"rooms": ["r1", "r2"]}}
+    )
+    spec = a.extractors[0]
+    args = ("r1_empty", "sha", (0, 100))
+    assert context_cache_key(a, spec, [{"ids": [0, 1]}], *args) == context_cache_key(
+        b, spec, [{"ids": [0, 1]}], *args
+    )
+    assert context_cache_key(a, spec, [{"ids": [0, 1]}], *args) != context_cache_key(
+        a, spec, [{"ids": [0, 2]}], *args
+    )
+    assert context_cache_key(a, spec, [], *args) != context_cache_key(
+        a, spec, [], "r1_empty", "sha", (0, 101)
+    )
+
+
+def test_corrupt_context_entry_is_recomputed(tmp_path):
+    from csi_bench.adapters.storage.context_cache import NpzContextCache
+
+    cache = NpzContextCache(tmp_path)
+    assert cache.get("k") is None
+    cache.put("k", np.arange(6.0).reshape(2, 3))
+    np.testing.assert_array_equal(cache.get("k"), np.arange(6.0).reshape(2, 3))
+    (tmp_path / "k.npz").write_bytes(b"junk")
+    assert cache.get("k") is None
