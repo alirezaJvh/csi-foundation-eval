@@ -1,0 +1,6 @@
+# Accuracy (%) published by the reference paper, per room setting.
+metric: accuracy
+published:
+  r1: 99.41
+  r2: 99.59
+  mixed: 97.37

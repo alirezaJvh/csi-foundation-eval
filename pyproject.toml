@@ -27,6 +27,8 @@ dev = [
     "ty==0.0.85",
     "import-linter==2.15",
     "pytest==9.1.1",
+    "matplotlib==3.11.2",
+    "ipykernel==7.4.0",
 ]
 
 [build-system]
@@ -87,6 +89,16 @@ forbidden_modules = [
     "csi_bench.config",
     "csi_bench.runner",
     "csi_bench.results_api",
+]
+
+[[tool.importlinter.contracts]]
+name = "results_api imports only core"
+type = "forbidden"
+source_modules = ["csi_bench.results_api"]
+forbidden_modules = [
+    "csi_bench.adapters",
+    "csi_bench.config",
+    "csi_bench.runner",
 ]
 
 [[tool.importlinter.contracts]]

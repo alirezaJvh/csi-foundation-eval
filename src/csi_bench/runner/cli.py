@@ -15,7 +15,8 @@ from csi_bench.core.errors import ConfigError, DataError
 from csi_bench.core.results_schema import DATASET_TABLE_SCHEMA, SCOPES, dataset_table_path
 from csi_bench.core.splitplan import PARTS, find_split, load_split_plan
 from csi_bench.runner.discover import discover
-from csi_bench.runner.run import run
+from csi_bench.runner.report import DEFAULT_REFERENCE, report
+from csi_bench.runner.run import run, run_sweep
 
 _COUNTS = ("n_packets", *PARTS)
 _SCOPE_RECORDING, _SCOPE_CLASS, _SCOPE_ROOM, _SCOPE_TOTAL = SCOPES
@@ -113,12 +114,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     d.add_argument("--split", help="split hash to use when several plans exist")
     r = sub.add_parser("run", help="run one experiment config and store its result")
     r.add_argument("config", help="path to an ExperimentConfig YAML file")
+    w = sub.add_parser("sweep", help="expand a sweep file and run every config sequentially")
+    w.add_argument("file", help="path to a base config YAML with a `sweep:` block")
+    w.add_argument("--force", action="store_true", help="re-execute every run")
+    p = sub.add_parser("report", help="refresh runs/index.parquet and print the comparison table")
+    p.add_argument("--runs", default="runs", help="results directory")
+    p.add_argument("--all-variants", action="store_true", help="list every run's variant")
+    p.add_argument("--include-dirty", action="store_true", help="include runs made on a dirty tree")
+    p.add_argument("--reference", default=DEFAULT_REFERENCE, help="published reference values")
     try:
         args = parser.parse_args(argv)
     except SystemExit as e:
         return e.code if isinstance(e.code, int) else 2
     if args.command == "run":
         return run(args.config)
+    if args.command == "sweep":
+        return run_sweep(args.file, args.force)
+    if args.command == "report":
+        return report(args.runs, args.all_variants, args.include_dirty, args.reference)
     return describe(args.dataset, args.split)
 
 

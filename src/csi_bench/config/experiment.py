@@ -173,20 +173,25 @@ def validate_registry(config: ExperimentConfig) -> None:
     _check_adapter("head", config.head, "head")
 
 
+def config_from_dict(raw: Any, source: str = "config") -> ExperimentConfig:
+    """The single construction path: dict -> `model_validate` -> `validate_registry`."""
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{source}: config must be a mapping")
+    try:
+        config = ExperimentConfig.model_validate(raw)
+    except ValidationError as e:
+        raise ConfigError(f"{source}: {_named_error(e)}") from e
+    validate_registry(config)
+    return config
+
+
 def load_config(path: str | Path) -> ExperimentConfig:
     """Read YAML into a validated `ExperimentConfig`, or raise `ConfigError`."""
     try:
         raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as e:
         raise ConfigError(f"{path}: {e}") from e
-    if not isinstance(raw, dict):
-        raise ConfigError(f"{path}: config must be a mapping")
-    try:
-        config = ExperimentConfig.model_validate(raw)
-    except ValidationError as e:
-        raise ConfigError(f"{path}: {_named_error(e)}") from e
-    validate_registry(config)
-    return config
+    return config_from_dict(raw, str(path))
 
 
 def resolved_body(config: ExperimentConfig, split_root: str | Path = "splits") -> dict[str, Any]:

@@ -447,6 +447,31 @@ So that my supervisor gets the comparison table and I can chart results in Jupyt
 **And** a test fails if any notebook imports anything other than `results_api` from `csi_bench`
 **And** `notebooks/01_classical_overview.ipynb` shows an example chart (macro-F1 vs window length per classifier)
 
+### Story 2.9: Faster feature extraction and head training
+
+As a researcher,
+I want `paper_beamforming` extraction and the heads to use several cores within a RAM budget,
+So that the 216-run classical baseline sweep finishes in hours, not days.
+
+**Acceptance Criteria:**
+
+**Given** `paper_beamforming` and a set of windows
+**When** features are extracted with several workers
+**Then** the feature matrix is identical to the single-process result (same values, same row order)
+**And** the paper-parity test against `saved_dataset/*.npy` still passes
+**And** the worker count is configurable, defaults to a value that keeps the run within about 4 GB on the development machine, and `1` restores the old behaviour
+
+**Given** the `random_forest` and `knn` heads
+**When** they are fitted
+**Then** they use more than one core, and the metrics for a fixed seed are unchanged
+
+**Given** `experiments/classical_baseline.yaml`
+**When** the first `paper_beamforming` run finishes
+**Then** the measured extraction time and peak memory before and after are recorded in the story's spec
+**And** a run left in `running` state by an interrupted sweep is rerun on resume
+
+**Out of scope (separate story if still too slow):** reusing overlapping inner windows across windows, which needs recording context in the extractor interface, and running several sweep processes at once, which needs a run-directory lock.
+
 ## Epic 3: Paper reproduction and leakage measurement
 
 The researcher can reproduce the paper's published accuracy with its random split and show what the same method scores under the time-block split.

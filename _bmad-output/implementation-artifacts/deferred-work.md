@@ -53,3 +53,9 @@
 - `_setup_runtime` sets `torch.use_deterministic_algorithms`/default device process-globally and never restores them.
 - Feature cache key omits a dataset content hash and uses unsorted `rooms`. Pre-existing (story 2.4).
 - Compare `paper_beamforming` against the real `data/csi_proc_python/processing.py` once on a sample recording (oracle is a hand transcription with documented deviations).
+
+## Deferred from: code review of spec-2-8-comparison-report-and-notebook-results-api (2026-10-10)
+
+- Sweep `--force`/dirty-rerun tests (`tests/test_sweep.py:87-121`) only assert the `force` kwarg; spy on `run_module._extract` to prove seeds are recomputed. Story 2.7.
+- Sweep robustness (story 2.7): duplicate `run_id`s in one sweep run twice; `_sweep_action` can raise outside the per-run try; a still-dirty finished run is skipped even if the edits changed; `--force` leaves stale seed artifacts.
+- Notebook `01_classical_overview.ipynb` is never executed by a test; add a test applying its pandas expressions to the `runs` fixture index.

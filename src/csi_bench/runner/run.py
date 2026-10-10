@@ -17,6 +17,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 import torch
+import yaml
 
 from csi_bench.adapters.storage.feature_cache import NpzFeatureCache
 from csi_bench.config.experiment import (
@@ -26,6 +27,7 @@ from csi_bench.config.experiment import (
     load_config,
     save_config,
 )
+from csi_bench.config.sweep import expand_sweep
 from csi_bench.core import registry
 from csi_bench.core import results_schema as rs
 from csi_bench.core.contracts import FeatureMatrix, Predictions, Recording, WindowSet
@@ -342,8 +344,9 @@ def _execute(
     run_id: str,
     root: str | Path,
     cache_root: str | Path = DEFAULT_CACHE_ROOT,
+    force: bool = False,
 ) -> None:
-    previous = _completed_seeds(config, run_id, root)
+    previous = {} if force else _completed_seeds(config, run_id, root)
     todo = [seed for seed in config.seeds if seed not in previous]
     if not todo:
         return
@@ -500,4 +503,70 @@ def run(
         sys.stderr.write(f"error: {e}\n")
         return 2
     sys.stdout.write(f"{run_id}\n")
+    return 0
+
+
+def _sweep_action(config: ExperimentConfig, run_id: str, root: str | Path) -> str:
+    """`skip`, `run` (resume missing seeds) or `rerun` (a finished run made on a dirty tree)."""
+    if len(_completed_seeds(config, run_id, root)) != len(config.seeds):
+        return "run"
+    try:
+        provenance = json.loads(rs.provenance_path(run_id, root).read_text(encoding="utf-8"))
+        was_dirty = bool(provenance["git"]["dirty"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return "run"
+    if not was_dirty:
+        return "skip"
+    status = _git(["status", "--porcelain"])
+    return "skip" if status is None or status else "rerun"
+
+
+def run_sweep(
+    path: str | Path,
+    force: bool = False,
+    root: str | Path = DEFAULT_ROOT,
+    cache_root: str | Path = DEFAULT_CACHE_ROOT,
+) -> int:
+    """Expand a sweep file, validate every config, then run them one at a time.
+
+    Exit code: 0 all fine, 1 some run failed, 2 the sweep itself is invalid.
+    """
+    try:
+        discover()
+    except (ImportError, ConfigError) as e:
+        sys.stderr.write(f"error: adapter discovery failed: {e}\n")
+        return 2
+    try:
+        try:
+            raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as e:
+            raise ConfigError(f"{path}: {e}") from e
+        expanded = expand_sweep(raw, str(path))
+        planned = [(compute_run_id(config), config) for _, config in expanded]
+    except (ConfigError, DataError) as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 2
+    failed: list[str] = []
+    skipped = 0
+    for run_id, config in planned:
+        action = "rerun" if force else _sweep_action(config, run_id, root)
+        if action == "skip":
+            skipped += 1
+            sys.stdout.write(f"{run_id} skipped\n")
+            continue
+        try:
+            _execute(config, path, run_id, root, cache_root, force=action == "rerun" or force)
+        except Exception as e:  # noqa: BLE001 - one failed run must not stop the sweep
+            sys.stderr.write(f"error: {run_id}: {e}\n")
+            sys.stdout.write(f"{run_id} failed\n")
+            failed.append(run_id)
+        else:
+            sys.stdout.write(f"{run_id} done\n")
+    summary = f"{len(planned) - len(failed) - skipped} of {len(planned)} runs ok"
+    if skipped:
+        summary += f" ({skipped} skipped)"
+    sys.stdout.write(summary + "\n")
+    if failed:
+        sys.stdout.write(f"failed: {', '.join(failed)}\n")
+        return 1
     return 0

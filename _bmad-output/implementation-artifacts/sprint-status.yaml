@@ -49,8 +49,9 @@ development_status:
   2-4-runner-owned-feature-cache: done
   2-5-paper-beamforming-feature-family: done
   2-6-feature-selection-manual-subsets-and-mrmr: done
-  2-7-sweeps-and-the-python-experiment-builder: backlog
-  2-8-comparison-report-and-notebook-results-api: backlog
+  2-7-sweeps-and-the-python-experiment-builder: done
+  2-8-comparison-report-and-notebook-results-api: done
+  2-9-faster-feature-extraction-and-head-training: backlog
   epic-2-retrospective: optional
 
   epic-3: backlog

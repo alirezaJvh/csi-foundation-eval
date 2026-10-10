@@ -135,3 +135,43 @@ def metrics_document(
         "seeds": seeds,
         "mean_std": aggregate,
     }
+
+
+ROOM_SETTINGS = ("r1", "r2", "mixed")
+
+INDEX_TABLE_SCHEMA = pa.schema(
+    [
+        ("run_id", pa.string()),
+        ("status", pa.string()),
+        ("role", pa.string()),
+        ("dataset", pa.string()),
+        ("split_hash", pa.string()),
+        ("dirty", pa.bool_()),
+        ("method", pa.string()),
+        ("room_setting", pa.string()),
+        ("window_len", pa.int64()),
+        ("stride", pa.int64()),
+        ("variant", pa.string()),
+        ("n_seeds", pa.int64()),
+        ("val_macro_f1_mean", pa.float64()),
+        ("val_macro_f1_std", pa.float64()),
+        ("val_accuracy_mean", pa.float64()),
+        ("val_accuracy_std", pa.float64()),
+        ("test_macro_f1_mean", pa.float64()),
+        ("test_macro_f1_std", pa.float64()),
+        ("test_accuracy_mean", pa.float64()),
+        ("test_accuracy_std", pa.float64()),
+    ]
+)
+
+
+def index_path(root: str | Path = "runs") -> Path:
+    return Path(root) / "index.parquet"
+
+
+def room_setting(rooms: list[str]) -> str:
+    """`r1`, `r2` or `mixed` for the two-room set; any other set is its sorted names joined."""
+    chosen = sorted(set(rooms))
+    if chosen == ["r1", "r2"]:
+        return "mixed"
+    return "+".join(chosen)
