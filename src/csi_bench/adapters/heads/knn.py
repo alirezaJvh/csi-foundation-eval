@@ -24,6 +24,7 @@ class Knn:
         self.seed = seed  # kNN has no randomness; kept for the shared constructor
         self._scaler: StandardScaler | None = None
         self._model: KNeighborsClassifier | None = None
+        self.val_score = 0.0
 
     def fit(
         self,
@@ -33,7 +34,9 @@ class Knn:
         y_val: np.ndarray,
     ) -> None:
         candidates = [lambda k=k: KNeighborsClassifier(n_neighbors=k) for k in self.params.k_grid]
-        self._scaler, self._model, _ = tune_and_refit(candidates, train, y_train, val, y_val)
+        self._scaler, self._model, _, self.val_score = tune_and_refit(
+            candidates, train, y_train, val, y_val
+        )
 
     def predict(self, features: FeatureMatrix) -> np.ndarray:
         assert self._scaler is not None and self._model is not None, "fit before predict"

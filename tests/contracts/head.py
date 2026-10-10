@@ -15,6 +15,7 @@ def check_head(
     test: FeatureMatrix,
 ) -> None:
     head.fit(train, y_train, val, y_val)
+    assert 0.0 <= head.val_score <= 1.0
     predicted = head.predict(test)
     assert predicted.shape == (test.values.shape[0],)
     assert set(np.unique(predicted)) <= set(np.unique(np.concatenate([y_train, y_val])))

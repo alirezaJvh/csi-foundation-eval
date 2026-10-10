@@ -65,6 +65,7 @@ def test_contract_accuracy_and_determinism(name):
     make = _make(name)
     head = make(0)
     check_head(head, train, y_train, val, y_val, test)
+    assert head.val_score > 0.9  # separable data: a head that never sets it stays at 0.0
     assert float((head.predict(test) == y_test).mean()) > 0.9
     check_seed_determinism(make, train, y_train, val, y_val, test)
     check_scaler_inside(make, _part)
@@ -141,7 +142,7 @@ def test_grid_selected_on_val_only_and_refit_on_union():
         return make
 
     # both predict zeros -> tie -> first wins
-    scaler, model, index = head_search.tune_and_refit(
+    scaler, model, index, _ = head_search.tune_and_refit(
         [candidate(1), candidate(2)], train, y_train, val, y_val
     )
     assert index == 0
@@ -153,7 +154,8 @@ def test_grid_selected_on_val_only_and_refit_on_union():
         def predict(self, x):
             return np.repeat(y_val, 1)[: len(x)] if len(x) == len(y_val) else np.zeros(len(x), int)
 
-    _, _, index = head_search.tune_and_refit(
+    _, _, index, score = head_search.tune_and_refit(
         [candidate(1), lambda: Oracle(True)], train, y_train, val, y_val
     )
     assert index == 1
+    assert score == pytest.approx(1.0)

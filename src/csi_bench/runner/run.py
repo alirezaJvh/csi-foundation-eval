@@ -116,6 +116,7 @@ def _completed_seeds(config: ExperimentConfig, run_id: str, root: str | Path) ->
         if (
             isinstance(record, dict)
             and set(rs.SPLIT_NAMES) <= set(record)
+            and isinstance(record.get("feature_names"), list)
             and rs.predictions_path(run_id, seed, root).is_file()
         ):
             done[seed] = record
@@ -265,6 +266,14 @@ def _write_predictions(
     pq.write_table(table, path)
 
 
+def _build_selector(config: ExperimentConfig) -> Any | None:
+    spec = config.feature_selection
+    if spec is None:
+        return None
+    cls: Any = registry.get("selector", spec.name)
+    return cls(cls.Params(**spec.params))
+
+
 def _run_seed(
     config: ExperimentConfig,
     seed: int,
@@ -275,21 +284,56 @@ def _run_seed(
     class_names: Sequence[str],
     run_id: str,
     root: str | Path,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[str], dict[str, Any] | None]:
     head_cls: Any = registry.get("head", config.head.name)
     train_i, val_i, test_i = (index_by_split[part] for part in PARTS)
-    head = head_cls(head_cls.Params(**config.head.params), seed)
-    head.fit(
-        _subset(matrix, train_i),
-        labels[train_i],
-        _subset(matrix, val_i),
-        labels[val_i],
-    )
-    val = _predictions("val", windows, val_i, labels[val_i], head.predict(_subset(matrix, val_i)))
-    test_pred = head.predict(_subset(matrix, test_i))
-    test = _predictions("test", windows, test_i, labels[test_i], test_pred)
-    _write_predictions(rs.predictions_path(run_id, seed, root), [val, test], class_names)
-    return {"val": evaluate(val, class_names), "test": evaluate(test, class_names)}
+    train, val, test = (_subset(matrix, rows) for rows in (train_i, val_i, test_i))
+    selector = _build_selector(config)
+    if selector is None:
+        n_candidates = 1
+    else:
+        # The selector sees train and val rows only; test is only ever transformed.
+        selector.fit(train, labels[train_i], val, labels[val_i])
+        n_candidates = len(selector.candidates)
+    if n_candidates == 0:
+        raise ConfigError("feature_selection: the selector produced no candidates")
+    best_head, best_index, best_score = None, 0, -1.0
+    scores: list[float] = []
+    for index in range(n_candidates):
+        if selector is not None:
+            selector.choose(index)
+        head = head_cls(head_cls.Params(**config.head.params), seed)
+        head.fit(
+            train if selector is None else selector.transform(train),
+            labels[train_i],
+            val if selector is None else selector.transform(val),
+            labels[val_i],
+        )
+        score = getattr(head, "val_score", None)
+        if score is None:
+            raise ConfigError(f"head {config.head.name!r} does not expose val_score")
+        scores.append(float(score))
+        if best_head is None or score > best_score:
+            best_head, best_index, best_score = head, index, score
+    assert best_head is not None
+    if selector is not None:
+        selector.choose(best_index)
+        val, test = selector.transform(val), selector.transform(test)
+    names = list(val.feature_names)
+    selection = None
+    if selector is not None:
+        selection = {
+            "chosen": best_index,
+            "candidates": [
+                {"n_features": len(c), "val_score": sc}
+                for c, sc in zip(selector.candidates, scores, strict=True)
+            ],
+        }
+    val_pred = _predictions("val", windows, val_i, labels[val_i], best_head.predict(val))
+    test_pred = _predictions("test", windows, test_i, labels[test_i], best_head.predict(test))
+    _write_predictions(rs.predictions_path(run_id, seed, root), [val_pred, test_pred], class_names)
+    metrics = {"val": evaluate(val_pred, class_names), "test": evaluate(test_pred, class_names)}
+    return metrics, names, selection
 
 
 def _execute(
@@ -366,10 +410,19 @@ def _execute(
         index_by_split = {
             part: [i for i, w in enumerate(windows) if w.split == part] for part in PARTS
         }
+        probe = _build_selector(config)
+        if probe is not None:
+            probe.validate(matrix.feature_names)
         fresh: dict[int, dict[str, Any]] = {}
+        seed_names: dict[int, list[str]] = {
+            seed: list(rec["feature_names"]) for seed, rec in previous.items()
+        }
+        seed_selection: dict[int, dict] = {
+            seed: rec["selection"] for seed, rec in previous.items() if "selection" in rec
+        }
         for seed in todo:
             _seed_everything(seed)
-            fresh[seed] = _run_seed(
+            fresh[seed], seed_names[seed], chosen = _run_seed(
                 config,
                 seed,
                 matrix,
@@ -380,14 +433,18 @@ def _execute(
                 run_id,
                 root,
             )
+            if chosen is not None:
+                seed_selection[seed] = chosen
         per_seed = {
             seed: fresh[seed]
             if seed in fresh
-            else {split: rs.metrics_from_dict(rec) for split, rec in previous[seed].items()}
+            else {split: rs.metrics_from_dict(previous[seed][split]) for split in rs.SPLIT_NAMES}
             for seed in config.seeds
         }
 
-        _write_json(rs.metrics_path(run_id, root), rs.metrics_document(per_seed))
+        _write_json(
+            rs.metrics_path(run_id, root), rs.metrics_document(per_seed, seed_names, seed_selection)
+        )
         _write_json(
             rs.provenance_path(run_id, root),
             collect_provenance(

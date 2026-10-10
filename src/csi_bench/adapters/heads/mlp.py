@@ -26,6 +26,7 @@ class Mlp:
         self.seed = seed
         self._scaler: StandardScaler | None = None
         self._model: MLPClassifier | None = None
+        self.val_score = 0.0
 
     def _make(self, alpha: float) -> MLPClassifier:
         return MLPClassifier(
@@ -43,7 +44,9 @@ class Mlp:
         y_val: np.ndarray,
     ) -> None:
         candidates = [lambda a=a: self._make(a) for a in self.params.alpha_grid]
-        self._scaler, self._model, _ = tune_and_refit(candidates, train, y_train, val, y_val)
+        self._scaler, self._model, _, self.val_score = tune_and_refit(
+            candidates, train, y_train, val, y_val
+        )
 
     def predict(self, features: FeatureMatrix) -> np.ndarray:
         assert self._scaler is not None and self._model is not None, "fit before predict"

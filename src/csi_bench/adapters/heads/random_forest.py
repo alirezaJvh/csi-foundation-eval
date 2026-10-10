@@ -27,6 +27,7 @@ class RandomForest:
         self.seed = seed
         self._scaler: StandardScaler | None = None
         self._model: RandomForestClassifier | None = None
+        self.val_score = 0.0
 
     def _make(self, n_estimators: int, max_depth: int | None) -> RandomForestClassifier:
         return RandomForestClassifier(
@@ -42,7 +43,9 @@ class RandomForest:
     ) -> None:
         grid = itertools.product(self.params.n_estimators_grid, self.params.max_depth_grid)
         candidates = [lambda n=n, d=d: self._make(n, d) for n, d in grid]
-        self._scaler, self._model, _ = tune_and_refit(candidates, train, y_train, val, y_val)
+        self._scaler, self._model, _, self.val_score = tune_and_refit(
+            candidates, train, y_train, val, y_val
+        )
 
     def predict(self, features: FeatureMatrix) -> np.ndarray:
         assert self._scaler is not None and self._model is not None, "fit before predict"

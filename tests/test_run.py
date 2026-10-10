@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -198,7 +199,7 @@ def test_real_data_run(tmp_path, monkeypatch, capsys):
     run_id = capsys.readouterr().out.strip()
     assert _status(rs.run_dir(run_id, tmp_path))["status"] == "done"
     metrics = json.loads(rs.metrics_path(run_id, tmp_path).read_text())
-    assert set(metrics["seeds"]["0"]) == {"val", "test"}
+    assert set(metrics["seeds"]["0"]) == {"val", "test", "feature_names"}
 
 
 def test_provenance_git_state(monkeypatch):
@@ -361,6 +362,11 @@ def test_add_a_seed_runs_only_the_new_seed(tmp_path, monkeypatch, capsys):
     for s in ("0", "1", "2"):
         assert after["seeds"][s] == before["seeds"][s]
     assert rs.predictions_path(run_id, 3, root).is_file()
+    for split, stats in after["mean_std"].items():
+        for metric, (mean, std) in stats.items():
+            values = [after["seeds"][str(s)][split][metric] for s in range(4)]
+            assert mean == pytest.approx(np.mean(values))
+            assert std == pytest.approx(np.std(values))
     assert _status(rs.run_dir(run_id, root))["status"] == "done"
 
 
@@ -411,7 +417,7 @@ def test_each_head_end_to_end(tmp_path, monkeypatch, capsys, head):
     assert main(["run", _config_file(tmp_path, head=head)]) == 0
     run_id = _run_id(capsys)
     metrics = json.loads(rs.metrics_path(run_id, tmp_path / "runs").read_text())
-    assert set(metrics["seeds"]["0"]) == {"val", "test"}
+    assert set(metrics["seeds"]["0"]) == {"val", "test", "feature_names"}
 
 
 def test_bad_head_grid_is_config_error(tmp_path, monkeypatch, capsys):
@@ -449,7 +455,7 @@ def test_part_shorter_than_window_len_is_config_error(tmp_path, monkeypatch, cap
     _make_project(tmp_path, packets=300)
     monkeypatch.chdir(tmp_path)
     assert main(["run", _config_file(tmp_path)]) == 2
-    assert "val" in capsys.readouterr().err
+    assert re.search(r"no val windows .* window_len", capsys.readouterr().err)
 
 
 def _spy_extract(monkeypatch):
@@ -570,3 +576,270 @@ def test_two_families_are_concatenated_with_unique_names(tmp_path, monkeypatch, 
     run_id = capsys.readouterr().out.strip()
     hits = _provenance_cache(run_id, tmp_path / "runs")
     assert [h["extractor"] for h in hits] == ["amplitude_stats", "paper_beamforming"]
+
+
+def test_duplicate_feature_names_across_extractors_fail_the_run(tmp_path, monkeypatch, capsys):
+    from csi_bench.adapters.extractors import amplitude_stats, paper_beamforming
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        paper_beamforming, "NAMES", amplitude_stats.NAMES[: len(paper_beamforming.NAMES)]
+    )
+    config = _config_file(
+        tmp_path,
+        window_len=56,
+        preprocessing=[{"antennas": [0, 1]}],
+        extractors=[{"name": "amplitude_stats"}, {"name": "paper_beamforming"}],
+    )
+    assert main(["run", config]) != 0
+    assert "duplicate feature names" in capsys.readouterr().err
+
+
+FAMILIES = {
+    "window_len": 56,
+    "preprocessing": [{"antennas": [0, 1]}],
+    "extractors": [{"name": "amplitude_stats"}, {"name": "paper_beamforming"}],
+}
+ALL_NAMES = [
+    "amplitude_stats.mean_power",
+    "amplitude_stats.std",
+    "amplitude_stats.flatness",
+    "paper_beamforming.doppler_theta_var",
+    "paper_beamforming.doppler_integral_mean",
+    "paper_beamforming.distance_theta_var",
+    "paper_beamforming.distance_mean",
+    "paper_beamforming.flatness_theta_var",
+    "paper_beamforming.flatness_mean",
+]
+
+
+def _spy_head_inputs(monkeypatch):
+    from csi_bench.adapters.heads.logreg import LogReg
+
+    seen: list[tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]] = []
+    original = LogReg.fit
+
+    def spy(self, train, y_train, val, y_val):
+        seen.append((train.feature_names, val.feature_names, ()))
+        return original(self, train, y_train, val, y_val)
+
+    monkeypatch.setattr(LogReg, "fit", spy)
+    return seen
+
+
+def test_manual_selection_feeds_exactly_the_chosen_columns(tmp_path, monkeypatch, capsys):
+    from csi_bench.adapters.heads.logreg import LogReg
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    tests_seen: list[tuple[str, ...]] = []
+    original_predict = LogReg.predict
+
+    def spy_predict(self, features):
+        tests_seen.append(features.feature_names)
+        return original_predict(self, features)
+
+    monkeypatch.setattr(LogReg, "predict", spy_predict)
+    seen = _spy_head_inputs(monkeypatch)
+    selection = {"manual": ["paper_beamforming", "amplitude_stats.mean_power"]}
+    config = _config_file(tmp_path, seeds=[0, 1], feature_selection=selection, **FAMILIES)
+    assert main(["run", config]) == 0
+    run_id = _run_id(capsys)
+    expected = [ALL_NAMES[0], *ALL_NAMES[3:]]
+    assert [s[0] for s in seen] == [tuple(expected)] * 2
+    assert [s[1] for s in seen] == [tuple(expected)] * 2
+    assert set(tests_seen) == {tuple(expected)}
+    seeds = _metrics(run_id, tmp_path / "runs")
+    assert seeds["0"]["feature_names"] == expected
+    assert seeds["1"]["feature_names"] == expected
+
+
+def test_null_selection_uses_all_columns_and_records_them(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert main(["run", _config_file(tmp_path, **FAMILIES)]) == 0
+    first = _run_id(capsys)
+    assert _metrics(first, tmp_path / "runs")["0"]["feature_names"] == ALL_NAMES
+    assert main(["run", _config_file(tmp_path, feature_selection=None, **FAMILIES)]) == 0
+    assert _run_id(capsys) == first
+
+
+def test_selection_changes_run_id(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert main(["run", _config_file(tmp_path, **FAMILIES)]) == 0
+    plain = _run_id(capsys)
+    selection = {"manual": ["amplitude_stats"]}
+    assert main(["run", _config_file(tmp_path, feature_selection=selection, **FAMILIES)]) == 0
+    assert _run_id(capsys) != plain
+
+
+def test_mrmr_picks_k_on_val_and_records_a_prefix(tmp_path, monkeypatch, capsys):
+    from csi_bench.adapters.heads.logreg import LogReg
+    from csi_bench.adapters.selectors.mrmr import Mrmr
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    rankings: list[tuple[str, ...]] = []
+    original_fit = Mrmr.fit
+
+    def spy_fit(self, *args):
+        original_fit(self, *args)
+        rankings.append(self.candidates[-1])
+
+    monkeypatch.setattr(Mrmr, "fit", spy_fit)
+    scores = iter([0.1, 0.9, 0.9])  # k=2 loses, k=3 wins, k=5 ties and loses
+    original_head_fit = LogReg.fit
+
+    def fake_score(self, *args):
+        original_head_fit(self, *args)
+        self.val_score = next(scores)
+
+    monkeypatch.setattr(LogReg, "fit", fake_score)
+    selection = {"mrmr": {"k": [2, 3, 5]}}
+    assert main(["run", _config_file(tmp_path, feature_selection=selection, **FAMILIES)]) == 0
+    run_id = _run_id(capsys)
+    names = _metrics(run_id, tmp_path / "runs")["0"]["feature_names"]
+    assert len(names) == 3
+    assert tuple(names) == rankings[0][:3]
+    assert set(names) <= set(ALL_NAMES)
+    assert _metrics(run_id, tmp_path / "runs")["0"]["selection"] == {
+        "chosen": 1,
+        "candidates": [
+            {"n_features": 2, "val_score": 0.1},
+            {"n_features": 3, "val_score": 0.9},
+            {"n_features": 5, "val_score": 0.9},
+        ],
+    }
+
+
+def test_mrmr_k_too_large_fails_before_any_seed(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    fitted = _spy_fits(monkeypatch)
+    selection = {"mrmr": {"k": [2, 10]}}
+    config = _config_file(tmp_path, feature_selection=selection, **FAMILIES)
+    assert main(["run", config]) == 2
+    assert "exceeds" in capsys.readouterr().err
+    assert fitted == []
+
+
+def test_unknown_manual_entry_fails_before_any_seed(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    fitted = _spy_fits(monkeypatch)
+    config = _config_file(tmp_path, feature_selection={"manual": ["nope"]}, **FAMILIES)
+    assert main(["run", config]) == 2
+    err = capsys.readouterr().err
+    assert "nope" in err and "amplitude_stats.std" in err
+    assert fitted == []
+
+
+def test_selector_sees_only_train_and_val_rows(tmp_path, monkeypatch, capsys):
+    from pydantic import BaseModel, ConfigDict
+
+    from csi_bench.adapters.selectors.manual import Manual
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    log: list[tuple[str, int]] = []
+    seen_rows: set[bytes] = set()
+    transformed: list[np.ndarray] = []
+
+    class SpyParams(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+    @registry.register("selector", "spy")
+    class Spy:
+        VERSION = 1
+        Params = SpyParams
+
+        def __init__(self, params):
+            self._inner = Manual(Manual.Params(columns=["amplitude_stats"]))
+
+        candidates = property(lambda self: self._inner.candidates)
+        selected_names = property(lambda self: self._inner.selected_names)
+
+        def validate(self, names):
+            self._inner.validate(names)
+
+        def fit(self, train, y_train, val, y_val):
+            log.append(("fit", len(train.values) + len(val.values)))
+            seen_rows.update(map(bytes, np.vstack([train.values, val.values])))
+            self._inner.fit(train, y_train, val, y_val)
+
+        def choose(self, index):
+            self._inner.choose(index)
+
+        def transform(self, matrix):
+            log.append(("transform", len(matrix.values)))
+            transformed.append(matrix.values)
+            return self._inner.transform(matrix)
+
+    config = _config_file(tmp_path, feature_selection={"name": "spy"}, **FAMILIES)
+    assert main(["run", config]) == 0
+    run_id = _run_id(capsys)
+    rows = pq.read_table(rs.predictions_path(run_id, 0, tmp_path / "runs")).to_pylist()
+    n_val = sum(r["split"] == "val" for r in rows)
+    n_test = sum(r["split"] == "test" for r in rows)
+    (fit_rows,) = [n for kind, n in log if kind == "fit"]
+    n_train = fit_rows - n_val  # fit saw exactly train + val rows
+    assert n_train > 0
+    # test rows are only ever transformed, once, after the choice is made
+    transforms = [n for kind, n in log if kind == "transform"]
+    assert transforms == [n_train, n_val, n_val, n_test]
+    # the rows handed to fit are exactly the train and val rows, never a test row
+    assert {bytes(r) for m in transformed[:2] for r in m} == seen_rows
+    assert not {bytes(r) for r in transformed[-1]} & seen_rows
+
+
+def test_selector_only_change_hits_the_feature_cache(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    calls = _spy_extract(monkeypatch)
+    cache = tmp_path / "cache"
+    first = _config_file(tmp_path, feature_selection={"manual": ["amplitude_stats"]}, **FAMILIES)
+    assert run(first, tmp_path / "runs", cache) == 0
+    assert len(calls) == 1
+    second = _config_file(tmp_path, feature_selection={"mrmr": {"k": [2]}}, **FAMILIES)
+    assert run(second, tmp_path / "runs", cache) == 0
+    assert len(calls) == 1
+    run_id = _run_id(capsys).splitlines()[-1]
+    assert all(h["hit"] for h in _provenance_cache(run_id, tmp_path / "runs"))
+
+
+def test_head_only_change_hits_the_feature_cache(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    calls = _spy_extract(monkeypatch)
+    cache = tmp_path / "cache"
+    selection = {"manual": ["amplitude_stats"]}
+    first = _config_file(tmp_path, feature_selection=selection, **FAMILIES)
+    assert run(first, tmp_path / "runs", cache) == 0
+    assert len(calls) == 1
+    second = _config_file(
+        tmp_path,
+        feature_selection=selection,
+        head={"name": "knn", "params": {}},
+        **FAMILIES,
+    )
+    assert run(second, tmp_path / "runs", cache) == 0
+    assert len(calls) == 1
+    run_id = _run_id(capsys).splitlines()[-1]
+    assert all(h["hit"] for h in _provenance_cache(run_id, tmp_path / "runs"))
+
+
+def test_resume_keeps_feature_names(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    selection = {"manual": ["amplitude_stats.std"]}
+    assert main(["run", _config_file(tmp_path, feature_selection=selection, **FAMILIES)]) == 0
+    run_id = _run_id(capsys)
+    config = _config_file(tmp_path, feature_selection=selection, seeds=[0, 1], **FAMILIES)
+    assert main(["run", config]) == 0
+    seeds = _metrics(run_id, tmp_path / "runs")
+    assert seeds["0"]["feature_names"] == ["amplitude_stats.std"]
+    assert seeds["1"]["feature_names"] == ["amplitude_stats.std"]
+    assert seeds["0"]["selection"] == seeds["1"]["selection"]
+    assert seeds["0"]["selection"]["chosen"] == 0

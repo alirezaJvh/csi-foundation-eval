@@ -25,6 +25,7 @@ class LogReg:
         self.seed = seed
         self._scaler: StandardScaler | None = None
         self._model: LogisticRegression | None = None
+        self.val_score = 0.0
 
     def _make(self, c: float) -> LogisticRegression:
         return LogisticRegression(C=c, max_iter=self.params.max_iter, random_state=self.seed)
@@ -37,7 +38,9 @@ class LogReg:
         y_val: np.ndarray,
     ) -> None:
         candidates = [lambda c=c: self._make(c) for c in self.params.C_grid]
-        self._scaler, self._model, _ = tune_and_refit(candidates, train, y_train, val, y_val)
+        self._scaler, self._model, _, self.val_score = tune_and_refit(
+            candidates, train, y_train, val, y_val
+        )
 
     def predict(self, features: FeatureMatrix) -> np.ndarray:
         assert self._scaler is not None and self._model is not None, "fit before predict"

@@ -15,7 +15,7 @@ context:
 
 **Problem:** Classical experiments only have `amplitude_stats`; the paper's beamforming features (Doppler integral, CSI distance, flatness) cannot be used alone or combined with it.
 
-**Approach:** Port `data/csi_proc_python/processing.py` as the per-window extractor `paper_beamforming` (channels 0 and 1, 40 weights, inner windows 8/16/1, param `fix_distance_loop`), verified against a test-only oracle that copies the script's computation verbatim. `processing.py` stays unchanged. Several families in `extractors` are already concatenated by the runner; add a uniqueness check on the names.
+**Approach:** Port `data/csi_proc_python/processing.py` as the per-window extractor `paper_beamforming` (channels 0 and 1, 40 weights, inner windows 8/16/1, param `fix_distance_loop`), verified against a test-only oracle that reproduces the script's per-window computation, with two documented deviations (metrics window spans all inner windows; `fix_distance_loop` pair loop). `processing.py` stays unchanged. Several families in `extractors` are already concatenated by the runner; add a uniqueness check on the names.
 
 </frozen-after-approval>
 
@@ -73,3 +73,30 @@ _Code review (2026-10-08) of the cumulative uncommitted change (stories 2.2–2.
 - `low` — `runtime_info()["deterministic"]` reflects torch only (`run.py:94`): the pipeline is sklearn/numpy; the key name is imprecise, not a defect.
 - `low` — Resume/corrupt-artifact robustness (`_completed_seeds`, `metrics_from_dict`, per-seed merge; `run.py:103,386`, `results_schema.py:86`): artifacts are self-produced; non-object/missing-key inputs are not reachable in normal use.
 - `low` — Test-hygiene duplicate/local imports (`test_results_schema.py`, `test_logreg.py`): cosmetic.
+
+### Review Findings (second pass, 2026-10-09)
+
+_Code review of `5269e4f..14644fe` narrowed to 2.5-related files; layers: Blind Hunter, Edge Case Hunter, Verification Gap, Acceptance Auditor._
+
+**Decision needed**
+- [x] [Review][Decision] RESOLVED 2026-10-09 (accept redesign; Intent reworded): Oracle/aggregation deviates from the script's fixed W2=10 sliding window while the frozen Intent says "verbatim" — still open from the first pass; flagged again by Acceptance Auditor and Edge Case Hunter. Accept the redesign (and reword the Intent) or make oracle + aggregation verbatim. [tests/oracles/paper_processing.py:6-8]
+
+**Patch**
+- [x] [Review][Patch] Cross-extractor duplicate feature-name rejection has no negative test (config-level check fires first) [src/csi_bench/runner/run.py:213]
+- [x] [Review][Patch] `test_add_a_seed_runs_only_the_new_seed` never asserts `mean_std` after the rerun (should equal mean/std of the four per-seed values) [tests/test_run.py]
+- [x] [Review][Patch] `test_part_shorter_than_window_len_is_config_error` asserts only `"val" in err`; pin `no val windows .* window_len` [tests/test_run.py]
+
+**Deferred**
+- [x] [Review][Defer] Failed add-seed rerun overwrites `status.json` with `failed`, so `_completed_seeds` discards all finished seeds next run [src/csi_bench/runner/run.py:111,317] — deferred: pre-existing (story 2.3), not 2.5.
+- [x] [Review][Defer] Resumed run overwrites provenance/duration for the incremental pass only [src/csi_bench/runner/run.py] — deferred: pre-existing (story 2.3).
+- [x] [Review][Defer] Resumed seed is never compared against a fresh all-seeds run (`_seed_everything` unpinned by tests) [src/csi_bench/runner/run.py:88] — deferred: only observable with global-RNG heads (mlp); cheap test to add later.
+- [x] [Review][Defer] No run-directory lock for concurrent same-`run_id` runs [src/csi_bench/runner/run.py:302] — deferred: pre-existing (story 2.3).
+- [x] [Review][Defer] `_setup_runtime` sets torch determinism/default device process-globally and never restores [src/csi_bench/runner/run.py:79] — deferred: pre-existing; leaks across tests/library callers.
+- [x] [Review][Defer] Feature cache key omits dataset content hash and uses unsorted `rooms` [src/csi_bench/config/experiment.py] — deferred: pre-existing (story 2.4).
+
+**Rejected**
+- `low` — cache written before finite/duplicate checks (`run.py:207`): already deferred from 2.4.
+- `low` — `requires.phase` unenforced, missing `VENDOR_HASH`: already deferred / not required by spec.
+- `low` — `paper_beamforming` lacks ndim/NaN guards: the runner's finite check catches NaN; no reachable ndim≠3 input.
+- `low` — unbounded memory in `paper_beamforming`: already deferred; unverified.
+- `low` — duplicate `rooms`, `fit_scope` raw-param check, preset missing `params`, `ids` shorthand, uniform exit code 2, silent no-op resume, `_completed_seeds` on non-dict JSON, `_seed_everything` ordering vs preprocessing, redundant slice in `_combined_amplitude`, global `os.replace` patch in a test, layering-test coverage: negligible or self-produced inputs; fixes add complexity.

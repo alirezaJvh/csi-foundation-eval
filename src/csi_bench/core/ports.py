@@ -40,6 +40,7 @@ class Head(Protocol):
     """Classifier that tunes on val, refits on train ∪ val and predicts once (AD-11)."""
 
     VERSION: int
+    val_score: float  # best val macro-F1 reached while tuning, set by `fit`
 
     def fit(
         self,
@@ -53,6 +54,44 @@ class Head(Protocol):
 
     def predict(self, features: FeatureMatrix) -> np.ndarray:
         """Return predicted integer labels, row-aligned to the features."""
+        ...
+
+
+class FeatureSelector(Protocol):
+    """Column selector fitted on train and val rows only; test is only ever transformed."""
+
+    VERSION: int
+
+    @property
+    def candidates(self) -> tuple[tuple[str, ...], ...]:
+        """Candidate column subsets after `fit`, in matrix column order (first wins ties)."""
+        ...
+
+    @property
+    def selected_names(self) -> tuple[str, ...]:
+        """Columns kept by the chosen candidate (the first one until `choose` is called)."""
+        ...
+
+    def validate(self, feature_names: Sequence[str]) -> None:
+        """Raise `ConfigError` if the selector cannot apply to these columns."""
+        ...
+
+    def fit(
+        self,
+        train: FeatureMatrix,
+        y_train: np.ndarray,
+        val: FeatureMatrix,
+        y_val: np.ndarray,
+    ) -> None:
+        """Compute the candidate subsets from train rows (val may be used to validate)."""
+        ...
+
+    def choose(self, index: int) -> None:
+        """Make `candidates[index]` the selection used by `transform`."""
+        ...
+
+    def transform(self, matrix: FeatureMatrix) -> FeatureMatrix:
+        """Return the matrix restricted to `selected_names`, in column order."""
         ...
 
 

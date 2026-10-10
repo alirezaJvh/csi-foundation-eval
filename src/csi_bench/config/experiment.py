@@ -63,6 +63,29 @@ def _expand_preprocessing(raw: Any) -> Any:
     return out
 
 
+def _expand_feature_selection(raw: Any) -> Any:
+    """Normalize `{manual: [...]}` / `{mrmr: {...}}` to `{name, params}`; keep explicit form."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("feature_selection: expected a mapping or null")
+    if "name" in raw:
+        return raw
+    if len(raw) != 1 or next(iter(raw)) not in ("manual", "mrmr"):
+        raise ValueError(
+            "feature_selection: expected exactly one of 'manual' or 'mrmr' "
+            f"(or {{name, params}}), got {sorted(map(str, raw))}"
+        )
+    ((name, value),) = raw.items()
+    if name == "manual":
+        if not isinstance(value, list):
+            raise ValueError("feature_selection.manual: expected a list of columns or families")
+        return {"name": "manual", "params": {"columns": value}}
+    if not isinstance(value, dict):
+        raise ValueError("feature_selection.mrmr: expected a mapping like {k: [2, 3]}")
+    return {"name": "mrmr", "params": value}
+
+
 class ExperimentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -73,6 +96,7 @@ class ExperimentConfig(BaseModel):
     window_len: int = Field(ge=1)
     stride: int = Field(default=1, ge=1)
     extractors: list[AdapterSpec] = Field(min_length=1)
+    feature_selection: AdapterSpec | None = None
     head: AdapterSpec
     seeds: list[int] = Field(default_factory=lambda: [0], min_length=1)
     role: Literal["comparison", "reference"]
@@ -81,6 +105,11 @@ class ExperimentConfig(BaseModel):
     @classmethod
     def _expand(cls, raw: Any) -> Any:
         return _expand_preprocessing(raw)
+
+    @field_validator("feature_selection", mode="before")
+    @classmethod
+    def _expand_selector(cls, raw: Any) -> Any:
+        return _expand_feature_selection(raw)
 
     @field_validator("extractors")
     @classmethod
@@ -139,6 +168,8 @@ def validate_registry(config: ExperimentConfig) -> None:
                 f"extractors.{i}.name: window_len {config.window_len} "
                 f"< min_window_len {cls.min_window_len} for {spec.name}"
             )
+    if config.feature_selection is not None:
+        _check_adapter("selector", config.feature_selection, "feature_selection")
     _check_adapter("head", config.head, "head")
 
 
@@ -191,6 +222,15 @@ def resolved_body(config: ExperimentConfig, split_root: str | Path = "splits") -
             }
         )
     body["extractors"] = extractors
+    body.pop("feature_selection", None)
+    if config.feature_selection is not None:
+        spec = config.feature_selection
+        cls = _check_adapter("selector", spec, "feature_selection")
+        body["feature_selection"] = {
+            "name": spec.name,
+            "version": cls.VERSION,
+            "params": registry.affecting_params(cls.Params(**spec.params)),
+        }
     cls = _check_adapter("head", config.head, "head")
     body["head"] = {
         "name": config.head.name,

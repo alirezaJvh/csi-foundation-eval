@@ -43,3 +43,13 @@
 - Presets `ant4`, `ant4_rescale` and `paper_norm` (`config/presets.py:7`) are never exercised; a wrong ids/steps value would ship with no CI signal. Pre-existing (story 2.2).
 - The run-id body (`resolved_body`) and cache-key body (`feature_cache_key`) are hand-built twice and treat `window_len`/`stride` differently; the divergence is intentional today but the duplication can drift. Maintainability.
 - `NpzFeatureCache` has no on-disk schema/version stamp, so a future layout change would serve entries written by an old implementation rather than treating them as a miss. Pre-existing (story 2.4).
+
+## Deferred from: code review of spec-2-5-paper-beamforming-feature-family (2026-10-09)
+
+- A failed add-seed rerun writes `status.json = failed` while `metrics.json` keeps the earlier seeds; `_completed_seeds` requires `done`, so the next run recomputes every seed. Pre-existing (story 2.3).
+- Resumed runs rewrite `provenance.json`, `started_at` and `duration_seconds` for the incremental pass only; reused seeds lose their commit/env record. Pre-existing (story 2.3).
+- No test compares a resumed seed with the same seed from an all-seeds run, so `_seed_everything` placement is unpinned; only observable with global-RNG heads (mlp).
+- No run-directory lock: two processes with the same `run_id` can race on metrics/predictions. Pre-existing (story 2.3).
+- `_setup_runtime` sets `torch.use_deterministic_algorithms`/default device process-globally and never restores them.
+- Feature cache key omits a dataset content hash and uses unsorted `rooms`. Pre-existing (story 2.4).
+- Compare `paper_beamforming` against the real `data/csi_proc_python/processing.py` once on a sample recording (oracle is a hand transcription with documented deviations).

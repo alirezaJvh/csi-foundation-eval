@@ -103,12 +103,25 @@ def _mean_std(values: list[float]) -> list[float]:
     return [mean, variance**0.5]
 
 
-def metrics_document(per_seed: dict[int, dict[str, Metrics]]) -> dict:
-    """Per-seed metrics plus mean ± std per split, in the `metrics.json` schema."""
+def metrics_document(
+    per_seed: dict[int, dict[str, Metrics]],
+    feature_names: dict[int, list[str]] | None = None,
+    selection: dict[int, dict] | None = None,
+) -> dict:
+    """Per-seed metrics plus mean ± std per split, in the `metrics.json` schema.
+
+    `feature_names` maps a seed to the columns its head saw; each is stored as
+    `seeds.<seed>.feature_names`. `selection` maps a seed to the selector's candidates
+    (`n_features`, `val_score`) and the chosen index; each is stored as `seeds.<seed>.selection`.
+    """
     seeds: dict[str, dict] = {
         str(seed): {split: metrics_as_dict(m) for split, m in splits.items()}
         for seed, splits in per_seed.items()
     }
+    for seed, names in (feature_names or {}).items():
+        seeds[str(seed)]["feature_names"] = list(names)
+    for seed, chosen in (selection or {}).items():
+        seeds[str(seed)]["selection"] = chosen
     class_names = next(iter(next(iter(per_seed.values())).values())).class_names if per_seed else ()
     aggregate: dict[str, dict] = {}
     for split in SPLIT_NAMES:

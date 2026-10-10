@@ -227,3 +227,52 @@ def test_window_shorter_than_extractor_minimum_is_rejected(tmp_path):
             window_len=17,
             extractors=[{"name": "amplitude_stats"}, {"name": "paper_beamforming"}],
         )
+
+
+def test_feature_selection_shorthand_normalizes(tmp_path):
+    manual = _load(tmp_path, feature_selection={"manual": ["amplitude_stats.std"]})
+    assert manual.feature_selection is not None
+    assert manual.feature_selection.model_dump() == {
+        "name": "manual",
+        "params": {"columns": ["amplitude_stats.std"]},
+    }
+    mrmr = _load(tmp_path, feature_selection={"mrmr": {"k": [2, 3]}})
+    assert mrmr.feature_selection is not None
+    assert mrmr.feature_selection.params == {"k": [2, 3]}
+    saved = save_config(mrmr, tmp_path / "out" / "config.yaml")
+    reloaded = load_config(saved)
+    assert reloaded.feature_selection == mrmr.feature_selection
+    assert compute_run_id(reloaded) == compute_run_id(mrmr)
+
+
+def test_feature_selection_null_keeps_run_id(tmp_path):
+    base = compute_run_id(_load(tmp_path))
+    assert compute_run_id(_load(tmp_path, feature_selection=None)) == base
+    selected = _load(tmp_path, feature_selection={"mrmr": {"k": [2]}})
+    assert compute_run_id(selected) != base
+    other_k = _load(tmp_path, feature_selection={"mrmr": {"k": [3]}})
+    assert compute_run_id(other_k) != compute_run_id(selected)
+    manual = _load(tmp_path, feature_selection={"manual": ["amplitude_stats"]})
+    assert compute_run_id(manual) not in (base, compute_run_id(selected))
+
+
+@pytest.mark.parametrize(
+    ("entry", "match"),
+    [
+        ({"manual": ["a"], "mrmr": {"k": [1]}}, "exactly one"),
+        ({}, "exactly one"),
+        ({"other": 1}, "exactly one"),
+        ({"manual": []}, "feature_selection"),
+        ({"manual": "a"}, "list"),
+        ({"mrmr": {"k": []}}, "feature_selection"),
+        ({"mrmr": {"k": [2, 2]}}, "unique"),
+        ({"mrmr": {"k": [0]}}, "feature_selection"),
+        ({"mrmr": {"k": [1], "bogus": 1}}, "bogus"),
+        ({"mrmr": [2]}, "mapping"),
+        ({"name": "wrapper", "params": {}}, "unknown selector"),
+        ("manual", "mapping"),
+    ],
+)
+def test_bad_feature_selection_shape(tmp_path, entry, match):
+    with pytest.raises(ConfigError, match=match):
+        _load(tmp_path, feature_selection=entry)
