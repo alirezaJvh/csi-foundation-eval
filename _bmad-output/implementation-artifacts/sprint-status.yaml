@@ -58,22 +58,31 @@ development_status:
 
   epic-3: in-progress
   3-1-window-level-random-splitter-for-reference-runs: done
-  3-2-reproduce-the-paper-and-measure-leakage: in-progress
+  3-2-reproduce-the-paper-and-measure-leakage: done
   epic-3-retrospective: optional
 
+  # Epics 4-7 renumbered 2026-10-11 so numbers follow execution order (sprint-change-proposal-2026-10-11)
   epic-4: backlog
-  4-1-embed-every-packet-with-frozen-lwm-v1-1: backlog
-  4-2-lwm-preprocessing-variants: backlog
-  4-3-pool-and-score-lwm-in-the-comparison: backlog
+  4-1-readable-run-layout-and-report-section-per-protocol: backlog
+  4-2-room-holdout-splitter: backlog
+  4-3-confidence-intervals-from-a-recording-bootstrap: backlog
+  4-4-cross-room-classical-baseline: backlog
   epic-4-retrospective: optional
 
   epic-5: backlog
-  5-1-wavesfm-extractor: backlog
-  5-2-mantis-8m-extractor: backlog
-  5-3-imagenet-vision-model-extractor: backlog
-  5-4-full-comparison-sweep: backlog
+  5-1-embed-every-packet-with-frozen-lwm-v1-1: backlog
+  5-2-lwm-preprocessing-variants: backlog
+  5-3-pool-and-score-lwm-in-the-comparison: backlog
   epic-5-retrospective: optional
 
   epic-6: backlog
-  6-1-loader-for-the-first-verified-public-dataset: backlog
+  6-1-padova-80-mhz-loader: backlog
+  6-2-csi-bench-loader: backlog
   epic-6-retrospective: optional
+
+  epic-7: backlog
+  7-1-wavesfm-extractor: backlog
+  7-2-mantis-8m-extractor: backlog
+  7-3-imagenet-vision-model-extractor: backlog
+  7-4-full-comparison-sweep: backlog
+  epic-7-retrospective: optional

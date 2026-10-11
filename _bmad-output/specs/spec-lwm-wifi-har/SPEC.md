@@ -35,11 +35,14 @@ Opportunity plus research mandate. Pretrained deep models (wireless foundation m
   - **intent:** Researcher and supervisor can compare the pretrained deep models (CAP-3, CAP-7) and classical ML (CAP-4) side by side.
   - **success:** One results table lists every method per room setting on identical splits, each with the variant chosen by validation macro-F1 and its test score; an all-variants view covers the rest. The dataset paper's method, recomputed from `saved_csi`, appears twice: under the time-block split as a comparison row, and under a random split as a reference row next to its published numbers.
 - **CAP-6**
-  - **intent:** Researcher can repeat CAP-3 to CAP-5 on public datasets once the supervisor verifies them.
-  - **success:** Each verified dataset gets a loader and a results table with no change to the evaluation code.
+  - **intent:** Researcher can repeat CAP-3 to CAP-5 and CAP-8 on public activity-recognition datasets. The supervisor verified Padova 80 MHz (Meneghello et al.) and CSI-Bench (2026-10-08); start with the one easier to import.
+  - **success:** Each dataset gets a loader and its own report section with no change to the evaluation code. People counting (e.g. WiMANS) stays a separate, later use case.
 - **CAP-7**
   - **intent:** Researcher can run other pretrained models frozen on the same data, splits and classifier heads as LWM: WavesFM, Mantis-8M, and an ImageNet-pretrained vision model. Watch-list models join once their weights are obtained (`candidate-models.md`).
   - **success:** Each model reports the CAP-3 metrics for every room and setting, and adding a model needs only a new model adapter, not pipeline changes.
+- **CAP-8**
+  - **intent:** Researcher can measure out-of-distribution generalisation: train on one room and test on the other (r1→r2, r2→r1), for every method, with uncertainty on every test score.
+  - **success:** `report` shows a cross-room section next to the within-room one, and every test score carries a confidence interval from a bootstrap over test recordings, so differences between methods can be judged.
 
 ## Constraints
 
@@ -51,16 +54,17 @@ Opportunity plus research mandate. Pretrained deep models (wireless foundation m
 - Recordings are used at their saved sample rate, with no resampling. To guard against the sample rate standing in for the activity, report each recording's packet count. If the professor confirms the rates differ, rerun with the rates equalized as a check.
 - **Primary split:** contiguous train, validation and test blocks within each recording, separated by a gap longer than any window, so no window spans two blocks. Hyperparameters and variants are chosen on validation; test is scored once. A random split is used only for the paper-reproduction reference row.
 - All methods use identical splits, windowing and metrics.
+- Split protocols are `time_block` (primary, within-room), `random_window` (reference only) and `room_holdout` (cross-room OOD; validation from the train room only). Results are reported per dataset and per split protocol, never mixed in one table.
 - Feature selection uses train and validation only, never test. It is off by default for pretrained-model embeddings.
 - Build order: the classical harness comes first (it exercises split, windows, classifiers, sweeps and report on cheap features, and the supervisor needs it now); LWM embeddings may start right after data loading.
 - Variants run as separate experiments, not hard-coded choices: 2 vs 4 antennas, preprocessing variants, and window length (per-packet and several pooled lengths).
 - Model, preprocessing, windowing, classifier head and dataset must be switchable per experiment without rewriting the pipeline, and every reported number must trace back to its exact configuration.
 - Runs on the local CPU (Ryzen 7 6800-series, 11 GB RAM). No GPU dependency.
-- Public datasets are used only after the supervisor verifies them.
+- Public datasets are used only after the supervisor verifies them (Padova 80 MHz and CSI-Bench verified 2026-10-08).
 
 ## Non-goals
 
-- Pretraining or fine-tuning any model (partial, full or LoRA); fine-tuning is the next phase.
+- Pretraining or fine-tuning any model in this phase; see "Next phase (conditional)".
 - Large language model approaches (e.g. WirelessSenseLLM, Wi-Chat), and LWM-Spectro, which needs I/Q signals.
 - People counting, deferred until a verified public dataset with count labels exists.
 - Collecting new data or re-decoding raw pcaps, which are not available.
@@ -69,7 +73,18 @@ Opportunity plus research mandate. Pretrained deep models (wireless foundation m
 
 ## Success signal
 
-- The supervisor receives a reproducible table comparing the pretrained deep models (LWM, WavesFM, Mantis-8M, an ImageNet model) with the classical ML pipeline on the own dataset (room 1, room 2, mixed), using the time-block split, next to the paper's random-split reference numbers. Each row can be regenerated with one command from its saved configuration.
+- The supervisor receives a reproducible table comparing the pretrained deep models (LWM, WavesFM, Mantis-8M, an ImageNet model) with the classical ML pipeline on the own dataset (room 1, room 2, mixed), using the time-block split, next to the paper's random-split reference numbers, plus a cross-room table (CAP-8) and the same tables on each verified public dataset (CAP-6). Each row can be regenerated with one command from its saved configuration.
+
+## Next phase (conditional)
+
+Starts only if the frozen-model results (CAP-3, CAP-7) under CAP-8 justify it, e.g. frozen embeddings don't beat classical features across rooms. Candidates:
+
+- Trainable self-supervised encoders (not LLMs): RF-JEPA, RF-BYOL, SimCLR on sanitized time × subcarrier tensors.
+- Transformer baselines as in CSI-Bench.
+- Fine-tuning or LoRA of the frozen models.
+- Zero-shot transfer across datasets.
+
+Needs a trainable-model port (spine Deferred table) and probably a GPU. Source: `docs/technical_guide_classical_ml_vs_dnn_for_rf_sensing.md` §5, sprint-change-proposal-2026-10-11.
 
 ## Assumptions
 

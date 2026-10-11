@@ -45,10 +45,15 @@ Known issues:
 
 Paper's reference results (random split): room 1 99.41%, room 2 99.59%, mixed rooms 97.37% (4 features, W2 = 40).
 
-## Candidate public datasets — pending supervisor verification
+## Public datasets — verified by supervisor (2026-10-08)
 
-| Dataset | Links | Note |
-|---|---|---|
-| Padova 80 MHz CSI (Meneghello et al.) | data: https://ieee-dataport.org/documents/csi-dataset-wireless-human-sensing-80-mhz-wi-fi-channels · paper: https://arxiv.org/abs/2305.03170 · code: https://github.com/francescamen/SHARP | Most likely useful; 80 MHz 802.11ac like the own setup |
-| WiMANS | https://github.com/huangshk/WiMANS · paper: https://arxiv.org/abs/2402.09430 | Multi-user; candidate for the deferred people-counting task |
-| EHUNAM | https://doi.org/10.6084/m9.figshare.28541225.v1 | Not yet characterized |
+The supervisor accepted all candidates and split them into two use cases. Activity recognition comes first and is in scope for CAP-6. People counting comes later and is out of scope.
+
+| Dataset | Use case | Status | Links | Note |
+|---|---|---|---|---|
+| Padova 80 MHz CSI (Meneghello et al.) | activity recognition | **in scope, first candidate** | data: https://ieee-dataport.org/documents/csi-dataset-wireless-human-sensing-80-mhz-wi-fi-channels · paper: https://arxiv.org/abs/2305.03170 · code: https://github.com/francescamen/SHARP | Same hardware family as the own data (Asus RT-AC86U, Nexmon, 802.11ac 80 MHz), so probably the easiest import. Likely recorded across several environments and days, a natural second generalisation test. Story 6.1 confirms the format, classes and splits. |
+| CSI-Bench (NeurIPS 2025 Datasets & Benchmarks) | activity recognition (plus other tasks) | **in scope, second** | paper: https://proceedings.neurips.cc/paper_files/paper/2025/file/f7c68372b3d39e8d7a093eb2edaaad87-Paper-Datasets_and_Benchmarks_Track.pdf | Large and multi-device. Its paper reports Transformer baselines, which are context for the spec's "Next phase". Story 6.2 confirms the format (possibly amplitude-only), classes and splits. |
+| WiMANS | people counting (multi-user) | later use case, out of scope | https://github.com/huangshk/WiMANS · paper: https://arxiv.org/abs/2402.09430 | Kept for the people-counting phase. |
+| EHUNAM | — | not characterised | https://doi.org/10.6084/m9.figshare.28541225.v1 | Unchanged. |
+
+Each dataset declares its own class list (AD-4). No label mapping across datasets is done in this phase; zero-shot transfer across datasets belongs to the spec's "Next phase (conditional)".

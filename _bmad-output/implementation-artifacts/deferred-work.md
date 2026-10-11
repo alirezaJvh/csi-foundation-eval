@@ -98,3 +98,14 @@
 - source_spec: spec-3-2-reproduce-the-paper-and-measure-leakage.md
   summary: Test order dependence through shared registry state — `test_config_validation_rejects_comparison_on_window_plan` and `test_missing_plan_passes_validation` fail with `unknown dataset 'tor_vergata'; registered: none` when other modules run first.
   evidence: pre-existing; reproduced with the 3.2 changes stashed; full suite in default order passes.
+
+## Deferred from: Epic 3 results discussion (2026-10-11)
+
+- source_spec: spec-3-2-reproduce-the-paper-and-measure-leakage.md
+  summary: Cross-room evaluation — train on r1 and test on r2, and the reverse, for the classical baseline and every foundation-model extractor (now Epics 5 and 7).
+  evidence: honest time-block results already reach 98.74 / 99.85 / 98.49 (r1 / r2 / mixed), leaving ~1–1.5 points of headroom; within-room comparison cannot separate methods. Cross-room is the known weak spot of CSI models and where pretrained embeddings could show a gain. Needs a room-level splitter or a train-rooms / test-rooms config field; plan it via correct-course before the pretrained-model comparison sweeps (now Epics 5 and 7).
+  planned: Epic 4, Stories 4.2 and 4.4 (cross-room), per sprint-change-proposal-2026-10-11.
+- source_spec: spec-3-2-reproduce-the-paper-and-measure-leakage.md
+  summary: Variance of the headline numbers — seeds only change head randomness (random_forest, mlp, logreg); svm and knn are deterministic, and the time-block split is fixed. Test-set variance (19 test blocks) needs per-recording or bootstrap confidence intervals, or several time-block plans.
+  evidence: every reported std is ±0.00 (1 seed); differences under ~1–2 points between methods are not established.
+  planned: Epic 4, Story 4.3 (confidence intervals), per sprint-change-proposal-2026-10-11.

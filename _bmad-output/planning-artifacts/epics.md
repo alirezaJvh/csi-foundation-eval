@@ -41,7 +41,10 @@ FR13: Recompute the paper's method from `saved_csi` (all `paper_beamforming` fea
 FR14: Run frozen LWM v1.1 on every packet, producing CLS or channel-mean embeddings for the 2- and 4-antenna variants. Embeddings are pooled over windows (`mean`, `mean_std`) and pass the NaN/constant sanity check. [CAP-2, CAP-3, AD-8]
 FR15: Run frozen WavesFM, Mantis-8M and one ImageNet vision model as per-window feature extractors, with the same windows, classifiers and metrics. [CAP-7]
 FR16: Notebooks read results through a read-only results API to make charts. [AD-13]
-FR17: Add a verified public dataset by writing a new loader only, with no change to the evaluation code. Blocked until the supervisor verifies a dataset. [CAP-6]
+FR17: Add the verified activity-recognition datasets (Padova 80 MHz first, then CSI-Bench) by writing a new loader only, with no change to the evaluation code. [CAP-6]
+FR18: A `room_holdout` splitter trains and validates on one room and tests on the other room's full recordings (r1→r2, r2→r1). Each direction is its own committed plan. [CAP-8, AD-6]
+FR19: Every test score carries a 95% confidence interval from a class-stratified bootstrap over test recordings. [CAP-8, AD-11]
+FR20: Run directories have readable names, `runs/<dataset>/<splitter>/<slug>--<run_id>/`, and `report` prints one section per (dataset, splitter). [AD-13]
 
 ### NonFunctional Requirements
 
@@ -69,8 +72,8 @@ NFR8: Public datasets are used only after the supervisor verifies them. [SPEC co
 
 - **No starter template.** This is a greenfield `uv` project: Python 3.12, CPU-only torch/torchvision from the PyTorch CPU index via `tool.uv.sources`, and a `pandas==3.0.6` override (mantis-tsfm caps pandas but never imports it). It also sets up ruff, ty, import-linter and pytest. All versions are pinned per the spine's Stack table. This becomes Epic 1, Story 1.
 - Source layout per the Structural Seed: `src/csi_bench/{core, adapters/*, config, runner, results_api}`, `experiments/`, `splits/`, `notebooks/`, `tests/`. The data stays in `data/csi_proc_python/`, and `.cache/` and `runs/` are git-ignored.
-- Core contracts are frozen dataclasses with the fixed shapes, ids and label coding of AD-4: `Recording` with `antenna_ids` and `RecordingMeta`, `window_id = recording_id@start:end`, and `FeatureMatrix` with `feature_names`.
-- Adapters register themselves via `@register` and are found automatically by `pkgutil`. Each declares a pydantic `Params` model and a `VERSION`; params marked `affects_result=False` are left out of run_id. [AD-3]
+- Core contracts are frozen dataclasses with the fixed shapes, ids and label coding of AD-4: `Recording` with `antenna_ids` and `RecordingMeta`, `window_id = recording_idstart:end`, and `FeatureMatrix` with `feature_names`.
+- Adapters register themselves via `register` and are found automatically by `pkgutil`. Each declares a pydantic `Params` model and a `VERSION`; params marked `affects_result=False` are left out of run_id. [AD-3]
 - Sweep files use an explicit `sweep:` block of dotted paths. `seeds` cannot be swept. [AD-5]
 - The feature cache has a single client (the runner), complete keys and atomic writes. Deleting it never changes a result. [AD-10]
 - Results store layout and schemas are defined in `core/results_schema.py`. A sweep reruns finished runs that were dirty once the tree is clean. [AD-13, AD-14]
@@ -98,7 +101,7 @@ Not applicable: the project has no user interface. It is driven from the command
 FR1: Epic 1 - Load the 19 own recordings with labels
 FR2: Epic 1 - `describe` counts per recording, class, room and split
 FR3: Epic 1 - Committed time-block train/val/test split with a gap
-FR4: Epic 2 - Preprocessing chain, antenna selection and global rescale; Epic 4 - LWM-specific variants (per-packet power, phase sanitization, amplitude-only)
+FR4: Epic 2 - Preprocessing chain, antenna selection and global rescale; Epic 5 - LWM-specific variants (per-packet power, phase sanitization, amplitude-only)
 FR5: Epic 2 - Windowing inside split blocks
 FR6: Epic 2 - Shared classifiers, metrics and seeds
 FR7: Epic 2 - Room selections r1/r2/mixed over one split
@@ -108,10 +111,13 @@ FR10: Epic 2 - ExperimentConfig from YAML or builder; `run` command
 FR11: Epic 2 - Resumable, failure-isolated `sweep`
 FR12: Epic 2 - `report` comparison table
 FR13: Epic 3 - Paper method under random and time-block splits
-FR14: Epic 4 - Frozen LWM per-packet embeddings and pooling
-FR15: Epic 5 - WavesFM, Mantis-8M, ImageNet extractors
+FR14: Epic 5 - Frozen LWM per-packet embeddings and pooling
+FR15: Epic 7 - WavesFM, Mantis-8M, ImageNet extractors
 FR16: Epic 2 - Read-only results API for notebooks
-FR17: Epic 6 - Public dataset loaders (blocked on supervisor verification)
+FR17: Epic 6 - Public dataset loaders (Padova 80 MHz, CSI-Bench)
+FR18: Epic 4 - `room_holdout` cross-room splitter
+FR19: Epic 4 - Recording-bootstrap confidence intervals
+FR20: Epic 4 - Readable run layout and a report section per (dataset, splitter)
 
 ## Epic List
 
@@ -127,17 +133,23 @@ The researcher and Paolo can write a sweep file (window lengths × feature sets 
 The researcher can reproduce the paper's published accuracy with its random split and show what the same method scores under the time-block split.
 **FRs covered:** FR13
 
-### Epic 4: LWM evaluation
+### Epic 4: Generalisation protocols
+The researcher can score any method across rooms (train on one room, test on the other) and see a confidence interval on every test score, with all results kept in one readable results store.
+**FRs covered:** FR18, FR19, FR20
+
+### Epic 5: LWM evaluation
 The researcher can embed every packet with frozen LWM (2/4 antennas, preprocessing, embedding type, pooling, window variants) and get LWM rows in the same table. The embedding story needs only Epic 1; scoring needs Epic 2.
 **FRs covered:** FR14, FR4 (LWM-specific variants)
 
-### Epic 5: Other pretrained models
+### Epic 6: Public datasets (activity recognition)
+The researcher can rerun the study on the supervisor-verified activity-recognition datasets (Padova 80 MHz, then CSI-Bench) by adding only their loaders.
+**FRs covered:** FR17
+
+### Epic 7: Other pretrained models
 The researcher can add WavesFM, Mantis-8M and an ImageNet model as rows in the same table, each as one new extractor.
 **FRs covered:** FR15
 
-### Epic 6: Public datasets (blocked)
-The researcher can rerun the study on a verified public dataset by adding only its loader. Placeholder until the supervisor verifies a dataset.
-**FRs covered:** FR17
+**Execution order** (sprint-change-proposal-2026-10-11): Epic 4 → Epic 5 → Epic 6 → Epic 7, in number order. Epic 4 comes first because every later score uses it. Epic 6 comes before Epic 7 so the new models are scored on every verified dataset. Epics 4–7 were renumbered on 2026-10-11 so numbers follow execution order (old 7 → 4, old 4 → 5, old 5 → 7; Epic 6 kept its number).
 
 ## Epic 1: Reproducible dataset access
 
@@ -164,7 +176,7 @@ So that every later component plugs in by adding one module, and the architectur
 **When** a test module breaks one of them
 **Then** `lint-imports` fails
 
-**Given** an adapter module decorated with `@register("<stage>", "<name>")` that declares a pydantic `Params` model and a `VERSION`
+**Given** an adapter module decorated with `register("<stage>", "<name>")` that declares a pydantic `Params` model and a `VERSION`
 **When** the runner's discovery imports `csi_bench.adapters` via `pkgutil.walk_packages`
 **Then** the adapter can be looked up by `(stage, name)` without being named anywhere else
 **And** registering the same `(stage, name)` twice raises `ConfigError`
@@ -274,7 +286,7 @@ So that the whole path (windows → features → classifier → score → stored
 **When** the Windower runs
 **Then**:
 - every window lies inside one split block
-- `window_id = "<recording_id>@<start>:<end>"`
+- `window_id = "<recording_id><start>:<end>"`
 - windows are ordered by `(recording_id, start)`
 - only recordings from the selected rooms appear
 - a `window_len` larger than `gap_packets` raises `ConfigError`
@@ -570,11 +582,94 @@ So that the thesis can show how much the random split inflates accuracy.
 
 **And** `report` shows the reference rows next to the published 99.41 / 99.59 / 97.37, plus the difference between the random and time-block results per room
 
-## Epic 4: LWM evaluation
+## Epic 4: Generalisation protocols
 
-The researcher can embed every packet with frozen LWM (2/4 antennas, preprocessing, embedding type, pooling, window variants) and get LWM rows in the same table. Story 4.1 needs only Epic 1; scoring needs Epic 2.
+The researcher can score any method across rooms and see a confidence interval on every test score, with all results kept in one readable results store. Runs first, because every later score uses it (sprint-change-proposal-2026-10-11).
 
-### Story 4.1: Embed every packet with frozen LWM v1.1
+### Story 4.1: Readable run layout and a report section per protocol
+
+As a researcher,
+I want run directories named after what they contain and a report grouped by dataset and split protocol,
+So that every result, old and new, stays in one store and I can find runs by eye.
+
+**Acceptance Criteria:**
+
+**Given** any run
+**Then** its directory is `runs/<dataset>/<splitter>/<slug>--<run_id>/`, with `slug = <extractors>-<selector>-<head>-<rooms>-w<window_len>` sanitised to `[a-z0-9_+-]`
+**And** lookup by `run_id`, deduplication and resuming still work, and existing `run_id`s don't change
+**And** the layout is defined only in `core/results_schema.py`
+
+**Given** the existing `runs/<run_id>/` directories
+**When** the one-off migration runs
+**Then** every run is moved to the new layout, nothing is deleted, the run count before equals the count after, and the index is rebuilt
+**And** running the migration again changes nothing
+
+**Given** runs from several datasets and splitters
+**When** `report` runs
+**Then** it prints one section per (dataset, splitter), and refuses only a mix of split hashes within one column
+**And** the leakage block pairs the `random_window` and `time_block` sections of the same dataset
+**And** `results_api` and the notebooks keep working
+
+### Story 4.2: `room_holdout` splitter
+
+As a researcher,
+I want a splitter that trains and validates on one room and tests on the other,
+So that every method gets a strict out-of-distribution score.
+
+**Acceptance Criteria:**
+
+**Given** params `train_rooms`, `test_rooms`, `fractions` and `gap_packets`
+**When** the plan is generated
+**Then** train-room recordings are split into time blocks for `train` and `val` (same gap rule), and test-room recordings go entirely to `test`
+**And** validation never uses the test room
+
+**Given** the plans for r1→r2 and r2→r1
+**Then** both are committed under `splits/tor_vergata/`, and their hashes differ from every other plan
+**And** a missing class in `val` or `test` raises `DataError`
+
+**Given** a config with `room_holdout`
+**When** `selection.rooms` differs from `train_rooms ∪ test_rooms`
+**Then** config validation rejects it
+
+**And** the Splitter contract test passes and `describe --split` works
+**And** `report` shows a cross-room section with the columns r1→r2 and r2→r1
+
+### Story 4.3: Confidence intervals from a recording bootstrap
+
+As a researcher,
+I want a confidence interval on every test score,
+So that I can tell real differences between methods from noise.
+
+**Acceptance Criteria:**
+
+**Given** a run's test predictions
+**When** the bootstrap runs
+**Then** a pure function in `core/metrics` resamples test recordings with replacement, stratified by class, with a fixed seed and `B` as a parameter, and returns 95% intervals for accuracy and macro-F1
+**And** the intervals are stored in `metrics.json`
+
+**Given** existing runs
+**Then** their intervals are computed from the saved `predictions.parquet`, with no retraining
+
+**And** `report` cells show the score with its interval
+**And** a class with a single test recording is flagged
+
+### Story 4.4: Cross-room classical baseline
+
+As a researcher,
+I want the classical grid and the paper method scored across rooms,
+So that the first out-of-distribution numbers exist before the pretrained models arrive.
+
+**Acceptance Criteria:**
+
+**Given** `experiments/classical_cross_room.yaml` (the classical grid and the paper method under both `room_holdout` plans)
+**When** `sweep` and then `report` run
+**Then** the report shows the cross-room section next to the within-room one, with confidence intervals
+
+## Epic 5: LWM evaluation
+
+The researcher can embed every packet with frozen LWM (2/4 antennas, preprocessing, embedding type, pooling, window variants) and get LWM rows in the same table. Story 5.1 needs only Epic 1; scoring needs Epic 2.
+
+### Story 5.1: Embed every packet with frozen LWM v1.1
 
 As a researcher,
 I want frozen LWM embeddings for every packet,
@@ -600,7 +695,7 @@ So that I can evaluate LWM on our data.
 **And** the adapter reports input amplitude statistics alongside the embeddings, with a warning if the median magnitude isn't of order 1
 **And** embedding the full dataset finishes on CPU, and the time taken is logged (about 2 minutes expected)
 
-### Story 4.2: LWM preprocessing variants
+### Story 5.2: LWM preprocessing variants
 
 As a researcher,
 I want the remaining preprocessing variants,
@@ -622,7 +717,7 @@ So that the domain-gap experiments in `preprocessing.md` can run.
 **When** `phase_sanitize` is applied
 **Then** the slope is removed, to within tolerance
 
-### Story 4.3: Pool and score LWM in the comparison
+### Story 5.3: Pool and score LWM in the comparison
 
 As a researcher,
 I want LWM embeddings pooled over the shared windows and scored with the shared classifiers,
@@ -637,14 +732,64 @@ So that LWM gets rows in the same table.
 
 **And** `window_len: 1` is accepted for LWM and rejected for per-window extractors
 **And** `feature_selection` defaults to null for LWM
-**And** the LWM input amplitude statistics from Story 4.1 are written to provenance
+**And** the LWM input amplitude statistics from Story 5.1 are written to provenance
 **And** `experiments/lwm.yaml` sweeps antennas × preprocessing presets × embedding type × pooler × window length × classifier × rooms, and `report` shows the LWM rows
+**And** `experiments/lwm.yaml` also runs under both `room_holdout` plans, and `report` shows the LWM rows in the cross-room section with confidence intervals
 
-## Epic 5: Other pretrained models
+## Epic 6: Public datasets (activity recognition)
+
+The researcher can rerun the study on the supervisor-verified activity-recognition datasets (verified 2026-10-08) by adding only their loaders. Padova 80 MHz comes first, as the likely easiest import; CSI-Bench follows.
+
+### Story 6.1: Padova 80 MHz loader
+
+As a researcher,
+I want a loader for the Padova 80 MHz CSI dataset (Meneghello et al.),
+So that the whole study can be repeated on independent data from the same hardware family.
+
+**Acceptance Criteria:**
+
+**Given** the downloaded dataset
+**When** the story starts
+**Then** its format, class list, environments and recording layout are confirmed and recorded in the story spec before any code is written
+
+**Given** the confirmed format
+**When** a new `DatasetSource` adapter is added
+**Then** it declares its own class list, passes the `DatasetSource` contract test, and gets its own committed `time_block` split
+**And** `describe` works for it
+**And** if the data has several environments, they map to `room`, so `room_holdout` gives a cross-environment test with no extra code
+
+**Given** the classical sweep
+**When** only its `dataset` field is changed
+**Then** the sweep runs on Padova and `report` shows a Padova section
+**And** `git diff` shows no change outside `adapters/datasets/`, `splits/` and `experiments/`
+
+### Story 6.2: CSI-Bench loader
+
+As a researcher,
+I want a loader for the CSI-Bench activity-recognition data,
+So that the study covers a large multi-device benchmark too.
+
+**Acceptance Criteria:**
+
+**Given** the downloaded dataset
+**When** the story starts
+**Then** its format, class list and recording layout are confirmed and recorded in the story spec
+**And** if the data is amplitude-only or otherwise does not fit the `Recording` contract (complex CSI, AD-4), the story stops and asks for a spine amendment instead of working around the contract
+
+**Given** the confirmed format
+**When** a new `DatasetSource` adapter is added
+**Then** it declares its own class list, passes the `DatasetSource` contract test, gets its own committed `time_block` split, and `describe` works for it
+
+**Given** the classical sweep
+**When** only its `dataset` field is changed
+**Then** the sweep runs on CSI-Bench and `report` shows a CSI-Bench section
+**And** `git diff` shows no change outside `adapters/datasets/`, `splits/` and `experiments/`
+
+## Epic 7: Other pretrained models
 
 The researcher can add WavesFM, Mantis-8M and an ImageNet model as rows in the same table, each as one new extractor.
 
-### Story 5.1: WavesFM extractor
+### Story 7.1: WavesFM extractor
 
 As a researcher,
 I want frozen WavesFM features per window,
@@ -668,7 +813,7 @@ So that a wireless foundation model with a built-in WiFi sensing task appears in
 
 **And** the frozen-checksum and NaN/constant checks pass, and timm stays pinned at 1.0.30
 
-### Story 5.2: Mantis-8M extractor
+### Story 7.2: Mantis-8M extractor
 
 As a researcher,
 I want frozen Mantis-8M features per window,
@@ -687,7 +832,7 @@ So that a general time-series foundation model appears in the comparison.
 
 **And** the frozen-checksum and NaN/constant checks pass, and the weights revision is recorded in provenance
 
-### Story 5.3: ImageNet vision-model extractor
+### Story 7.3: ImageNet vision-model extractor
 
 As a researcher,
 I want a frozen ImageNet-pretrained vision model as a per-window extractor,
@@ -705,7 +850,7 @@ So that the comparison includes the classic transfer-learning baseline.
 
 **And** the frozen-checksum and NaN/constant checks pass
 
-### Story 5.4: Full comparison sweep
+### Story 7.4: Full comparison sweep
 
 As a researcher,
 I want one sweep covering every method,
@@ -713,32 +858,10 @@ So that the supervisor's final table can be regenerated with one command.
 
 **Acceptance Criteria:**
 
-**Given** `experiments/full_comparison.yaml` (classical, paper reference, LWM, WavesFM, Mantis, ImageNet × rooms, on the committed time-block split)
+**Given** `experiments/full_comparison.yaml` (classical, paper reference, LWM, WavesFM, Mantis, ImageNet), run under `time_block` and both `room_holdout` plans on `tor_vergata`, and under `time_block` on each verified public dataset
 **When** `sweep` and then `report` run
-**Then** one table lists every method per room, with the best variant chosen on validation
+**Then** each (dataset, protocol) section lists every method with its best variant chosen on validation, plus confidence intervals
 **And** the reference rows sit next to the published numbers
 
 **And** every row shows its regeneration command
 **And** rerunning one of them reproduces the same `run_id` and metrics
-
-## Epic 6: Public datasets (blocked)
-
-The researcher can rerun the study on a verified public dataset by adding only its loader. Placeholder until the supervisor verifies a dataset.
-
-### Story 6.1: Loader for the first verified public dataset
-
-As a researcher,
-I want a loader for the first public dataset the supervisor verifies (Padova 80 MHz is the most likely),
-So that the whole study can be repeated on independent data.
-
-**Acceptance Criteria:**
-
-**Given** the verified dataset
-**When** a new `DatasetSource` adapter is added
-**Then** it declares its own class list, passes the `DatasetSource` contract test, and gets its own committed time-block split
-**And** `describe` works for it
-
-**Given** an existing sweep
-**When** only its `dataset` field is changed
-**Then** the sweep runs on the new dataset
-**And** `git diff` shows no change outside `adapters/datasets/`, `splits/` and `experiments/`

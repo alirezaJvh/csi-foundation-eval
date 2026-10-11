@@ -2,7 +2,7 @@
 title: 'Reproduce the paper and measure leakage'
 type: 'feature'
 created: '2026-10-10'
-status: 'in-progress'
+status: 'done'
 route: 'dispatch'
 baseline_commit: '2a05d9d6f64b53463dd2b8c8c12a6a0b16b68678'
 review_loop_iteration: 0
@@ -75,7 +75,7 @@ Fixture check (`tests/test_paper_fixture.py`): the default run recomputes only a
 - [x] [Review][Decision→Patch] Leakage "random split" column accepts any reference run — `report()` passes every `role: reference` row to `_leakage`; `check_split_role` allows a reference run on the time-block plan, and reference rows are not held to one split hash. Such a run lands under "random split" and corrupts the difference. Options: filter reference rows to window-unit plans; require one reference hash like the comparison side; or relabel the column "reference". (medium; edge-case-hunter+blind-hunter+acceptance-auditor+verification-gap) — resolved: option 1, `_on_window_plan` filters the random side to window-unit plans
 - [x] [Review][Decision→Patch] Leakage table lists every comparison method next to the paper's published numbers — `keys = set(random_rows) | set(block_rows)` gives every classical-baseline method a row with `-` random and the published 99.41/99.59/97.37 beside it (the new test asserts this for `amplitude_stats`). Options: only keys with a reference row; published only on rows that have a reference side; keep as is. (medium; blind-hunter+acceptance-auditor) — resolved: option 2, published shown only where a reference side exists
 - [x] [Review][Decision→Patch] Fixture check coverage vs runtime — Task says "fixture match per available file", but `CASES` omits `dataset_r1r2_w2_{10,30,50}.npy`, recomputes 1–2 recordings per file, skips column 2 for every r1 recording although only `r1_walking_3` was observed, and has no `slow`/data marker (~77 s whenever data is present). Options: add all cases behind a registered `slow` marker; keep the subset and record the choice; narrow the column-2 skip to `r1_walking_3`. (medium; acceptance-auditor+blind-hunter) — resolved: option 1, all 7 files, every recording, `slow` marker deselected by default, column 2 tolerated only for `r1_walking_3`
-- [ ] [Review][Decision] AC 2 not verified on real runs — `csi-bench sweep experiments/paper_reproduction.yaml && csi-bench report` was never executed; the leakage block is checked only on synthetic runs. Options: run it now; leave as an action item before `done`. (medium; acceptance-auditor+blind-hunter) — resolved: option 2, action item; after the changes are committed run `csi-bench sweep experiments/paper_reproduction.yaml && csi-bench report` on a clean tree (runs on a dirty tree are excluded from `report`), then mark `done`
+- [x] [Review][Decision→Done] AC 2 not verified on real runs — `csi-bench sweep experiments/paper_reproduction.yaml && csi-bench report` was never executed; the leakage block is checked only on synthetic runs. Options: run it now; leave as an action item before `done`. (medium; acceptance-auditor+blind-hunter) — resolved: option 2, action item; after the changes are committed run `csi-bench sweep experiments/paper_reproduction.yaml && csi-bench report` on a clean tree (runs on a dirty tree are excluded from `report`), then mark `done`
 - [x] [Review][Patch] Committed window plan `499148ef70db` has no data-free hash check; both committed-plan tests skip window plans and the `test_time_block.py` comment points at a test that also skips [tests/test_random_window.py:160]
 - [x] [Review][Patch] Sweep axes can set the same dotted path (plain + paired, two paired, or `head` and `head.name` in one entry); the later one silently wins [src/csi_bench/config/sweep.py:75]
 - [x] [Review][Patch] r1 W2=40 fixture asserts the known-bad row counts instead of skipping as stale; a regenerated fixture would fail the test [tests/test_paper_fixture.py:101]
@@ -109,3 +109,5 @@ Leakage compares the same method and room under two splits, so the pairing key i
 - `uv run pytest -q` -- expected: all pass (fixture tests skip without `data/**/*.npy`)
 - `uv run ruff check src tests && uv run ty check` -- expected: clean
 - `csi-bench sweep experiments/paper_reproduction.yaml && csi-bench report` -- expected: reference and leakage blocks printed
+
+Verified 2026-10-11 on clean runs: reference 99.34 / 99.93 / 96.33 vs published 99.41 / 99.59 / 97.37; leakage (random minus time-block) +9.42 r1, +5.77 r2, +21.98 mixed.

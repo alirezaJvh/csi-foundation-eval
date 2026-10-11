@@ -153,6 +153,13 @@ flowchart TB
   - The split never depends on model, preprocessing, pooling, window length or selection. A splitter's own randomness comes from a seed in its params.
   - If any class has no `val` or `test` windows, the splitter raises `DataError`.
   - Exception: `random_window`, which assigns individual windows at random (`unit: window`), is valid only when `role: reference` (AD-16).
+  - Exception: `room_holdout` (cross-room, CAP-8) uses whole rooms. Params: `train_rooms`, `test_rooms`, `fractions` and `gap_packets`.
+    - Train-room recordings are split into time blocks for `train` and `val`, with the same gap rule. Validation never comes from the test room.
+    - Every test-room recording goes to `test` in full.
+    - Each direction (r1→r2, r2→r1) is its own committed plan.
+    - Valid for `role: comparison`.
+    - Decided 2026-10-11: cross-room validation uses the train room only (strict OOD). There is no oracle-selection row.
+  - Room settings are selections *within* a split protocol (AD-17). A cross-room evaluation is a split protocol of its own, not a selection.
 
 ### AD-7 — The Windower alone owns window boundaries
 
@@ -215,6 +222,9 @@ flowchart TB
   - Feature scaling is fitted inside the head.
   - Test windows are predicted once, after the head is fitted.
   - A single `Evaluator` (pure functions in `core`) computes accuracy, macro-F1, per-class scores and the confusion matrix for both `val` and `test`.
+  - The `Evaluator` also computes a 95% confidence interval for test accuracy and macro-F1, by bootstrap over **test recordings**, stratified by class. It is a pure function with a fixed resampling seed and `B` resamples.
+    - The interval is stored in `metrics.json` with the point scores. It reflects which recordings ended up in test, which seeds cannot capture.
+    - A class with only one test recording (r1 `empty`) adds no spread, and the report notes it.
 
 ### AD-12 — Seeds, device and determinism
 
@@ -231,7 +241,11 @@ flowchart TB
 - **Binds:** `ResultsStore`, `runner`, `report`, `results_api`, notebooks
 - **Prevents:** untraceable results, two readers of the store disagreeing on its layout, picking variants by test score, and thesis numbers produced in notebooks
 - **Rule:**
-  - **Run directory.** Each run writes `runs/<run_id>/{config.yaml, status.json, metrics.json, seeds/<seed>/predictions.parquet, provenance.json, run.log}`.
+  - **Run directory.** Each run writes `runs/<dataset>/<splitter>/<slug>--<run_id>/{config.yaml, status.json, metrics.json, seeds/<seed>/predictions.parquet, provenance.json, run.log}`.
+    - `slug` = `<extractors>-<selector>-<head>-<rooms>-w<window_len>`, sanitised to `[a-z0-9_+-]`.
+    - `run_id` stays the identity (AD-5): lookups, deduplication and resuming use it, and the slug is only for readability.
+    - The layout is defined only in `core/results_schema.py`.
+    - Existing runs are moved by a one-off migration that deletes nothing. `runs/index.parquet` and `runs/_dataset/` stay where they are.
   - **Provenance** records:
     - the git commit, a dirty flag, and the diff when dirty
     - package versions
@@ -244,7 +258,11 @@ flowchart TB
     - Rows are methods (extractor + head). Columns are selections (r1, r2, mixed).
     - Each cell shows the variant with the best **validation** macro-F1 and reports that variant's test score.
     - `--all-variants` lists every variant.
-    - The report refuses to mix `split_hash`es in one table.
+    - The report prints one section per `(dataset, splitter)`.
+      - `time_block` and `random_window` sections have room columns (r1, r2, mixed).
+      - `room_holdout` sections have direction columns (r1→r2, r2→r1).
+    - Within a section, each column must come from a single `split_hash`, and the report refuses a mix in the same column.
+    - Cells show the test score with its confidence interval (AD-11).
     - It reads published numbers from `experiments/published_reference.yaml` and prints each row's regeneration command.
     - It excludes dirty runs by default.
   - **Notebooks** compute nothing reported in the thesis.
@@ -289,6 +307,7 @@ flowchart TB
 - **Prevents:** room settings producing different splits or window ids, and nobody owning the r1/r2/mixed choice
 - **Rule:**
   - `selection: {rooms: [...]}` is a top-level config field, applied after the split.
+  - With `room_holdout`, `selection.rooms` must equal `train_rooms ∪ test_rooms`; config validation rejects anything else.
   - `r1`, `r2` and `mixed` are each a selection over the same `SplitPlan`. Each one is a separate run.
   - Fitted preprocessing state and heads use only the selected recordings.
   - `csi-bench describe <dataset>` writes per-recording packet counts and per-class, per-room and per-split counts to `runs/_dataset/<dataset>.parquet`. `report` includes that table, which serves as the rate-confound guard.
@@ -308,7 +327,7 @@ flowchart TB
 
 | Concern | Convention |
 | --- | --- |
-| Naming | The package is `csi_bench`. Registry names are `snake_case` and match the module name (`lwm`, `wavesfm`, `mantis`, `imagenet`, `paper_beamforming`, `amplitude_stats`, `mrmr`, `time_block`, `random_window`, `mean_std`, `random_forest`). |
+| Naming | The package is `csi_bench`. Registry names are `snake_case` and match the module name (`lwm`, `wavesfm`, `mantis`, `imagenet`, `paper_beamforming`, `amplitude_stats`, `mrmr`, `time_block`, `random_window`, `room_holdout`, `mean_std`, `random_forest`). |
 | Ids & hashes | Hashes are SHA-256 of canonical JSON (sorted keys, no whitespace), shown as the first 12 hex characters. `window_id` follows AD-4. |
 | Data formats | Features are `.npy`, tables `.parquet`, configs YAML and metadata JSON. Timestamps are UTC ISO-8601. |
 | Sweep files | Use an explicit `sweep:` block of dotted paths (AD-5). Standard window sweep: `window_len ∈ {1, 10, 30, 40, 50}` (40 = the paper's W2). |
@@ -396,6 +415,7 @@ There is a single environment, the local machine, with no services. The only run
 | CAP-6 Public datasets | new `datasets/<name>` adapters | AD-1, AD-3, AD-4 |
 | CAP-7 Other pretrained models | `extractors/{wavesfm, mantis, imagenet}` | AD-8, AD-15 |
 | Domain-gap finding | LWM provenance stats, `report --all-variants` | AD-9, AD-13 |
+| CAP-8 Cross-room generalisation + intervals | `splitters/room_holdout`, `core/metrics` (bootstrap), `report` | AD-6, AD-11, AD-13, AD-17 |
 
 ## Deferred
 
@@ -403,8 +423,8 @@ There is a single environment, the local machine, with no services. The only run
 | --- | --- |
 | Trainable aggregators (attention, sequence heads) | They go behind `Head` (AD-8). Add them once the frozen pooling results are in. |
 | Wrapper feature selection (forward selection with the classifier) | Expensive and prone to overfitting validation with 19 recordings. Add after manual subsets + MRMR, behind AD-18. |
-| Training deep networks end-to-end (CNNs on raw CSI, fine-tuning) | Out of scope for now. Needs a new trainable-model port that reuses the split, windows, evaluator and results store. |
-| Public dataset loaders (Padova, WiMANS, EHUNAM) | Pending supervisor verification. Each is a `DatasetSource` with its own class list. |
+| Training deep networks (self-supervised pretraining such as SimCLR, BYOL or JEPA; fine-tuning or LoRA; CNNs or Transformers on raw CSI) | Spec "Next phase (conditional)": only if frozen results under CAP-8 justify it. Needs a new trainable-model port that reuses the split, windows, evaluator and results store, and probably a GPU. |
+| Public dataset loaders beyond activity recognition (WiMANS people counting, EHUNAM) | Padova and CSI-Bench were verified 2026-10-08 and are planned in Epic 6. The rest wait for the people-counting use case. Each is a `DatasetSource` with its own class list. |
 | Sample-rate equalization | Only if the professor confirms the rates differ. It would be a `tor_vergata` variant (AD-4). |
 | Parallel run execution | Not needed: queued sequential sweeps fit the workflow. Revisit if a sweep doesn't finish overnight. |
 | Experiment-tracking UI (e.g. MLflow) | `index.parquet` and notebooks are enough for now. A UI could be added later as a second `ResultsStore` adapter. |
