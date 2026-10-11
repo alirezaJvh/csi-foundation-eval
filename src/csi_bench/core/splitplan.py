@@ -25,7 +25,10 @@ def find_split(
     root: str | Path = "splits",
     hint: str = "set `split:` in the config",
 ) -> Path:
-    """Path of the committed plan: the one for `split`, or the only plan of the dataset."""
+    """Path of the committed plan: the one for `split`, or the only block plan of the dataset.
+
+    With `split` unset, window-unit plans (random_window) are never chosen implicitly.
+    """
     folder = Path(root) / dataset
     files = sorted(folder.glob("*.json")) if folder.is_dir() else []
     if split is not None:
@@ -36,10 +39,13 @@ def find_split(
         raise DataError(f"no split {split} for {dataset} in {folder} (known: {known})")
     if not files:
         raise DataError(f"no split plan found in {folder}; generate one first")
-    if len(files) > 1:
-        hashes = ", ".join(f.stem for f in files)
+    blocks = [f for f in files if read_plan_unit(f) == "block"]
+    if not blocks:
+        raise DataError(f"no block split plan in {folder}; a window plan needs an explicit split")
+    if len(blocks) > 1:
+        hashes = ", ".join(f.stem for f in blocks)
         raise DataError(f"several split plans in {folder} ({hashes}); {hint}")
-    return files[0]
+    return blocks[0]
 
 
 def read_plan_unit(path: str | Path) -> str:

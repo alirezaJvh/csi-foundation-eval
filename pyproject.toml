@@ -67,6 +67,8 @@ exclude = ["**/_vendor/**"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "-m 'not slow'"
+markers = ["slow: long port checks against the saved paper dataset (needs data/**/*.npy)"]
 
 [tool.importlinter]
 root_package = "csi_bench"

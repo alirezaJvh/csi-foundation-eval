@@ -1331,11 +1331,12 @@ def test_random_window_reference_run_and_comparison_refused(tmp_path, monkeypatc
     plan = RandomWindow().split(recs, "tor_vergata")
     write_split_plan(plan, tmp_path / "splits")
     monkeypatch.chdir(tmp_path)
-    assert main(["run", _config_file(tmp_path, role="reference")]) == 0
+    split = plan.split_hash
+    assert main(["run", _config_file(tmp_path, role="reference", split=split)]) == 0
     run_id = capsys.readouterr().out.strip()
     prov = json.loads(rs.provenance_path(run_id, tmp_path / "runs").read_text())
     assert prov["split_hash"] == plan.split_hash
-    assert main(["run", _config_file(tmp_path, role="comparison")]) != 0
+    assert main(["run", _config_file(tmp_path, role="comparison", split=split)]) != 0
     assert "role: reference" in capsys.readouterr().err
 
 
@@ -1352,8 +1353,9 @@ def test_run_refuses_comparison_on_window_plan_without_validation(tmp_path, monk
     recs = TorVergata(
         TorVergata.Params(root=str(tmp_path / "data/csi_proc_python/saved_csi"))
     ).load()
-    write_split_plan(RandomWindow().split(recs, "tor_vergata"), tmp_path / "splits")
+    plan = RandomWindow().split(recs, "tor_vergata")
+    write_split_plan(plan, tmp_path / "splits")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(experiment, "check_split_role", lambda unit, role: None)
-    assert main(["run", _config_file(tmp_path, role="comparison")]) != 0
+    assert main(["run", _config_file(tmp_path, role="comparison", split=plan.split_hash)]) != 0
     assert "role: reference" in capsys.readouterr().err

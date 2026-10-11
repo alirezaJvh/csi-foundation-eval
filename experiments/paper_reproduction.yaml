@@ -1,0 +1,27 @@
+# Paper reproduction and leakage measurement: the paper's method (paper_beamforming + random
+# forest, W2 = 40 so window_len = 40 + 16 = 56) per room, once under the paper's random window
+# split (reference) and once under the time-block split (comparison). 2 settings x 3 rooms = 6 runs.
+# `@setting` and `@rooms` are paired axes: their fields change together.
+# r1 and r2 use all six features; mixed uses MRMR with k = 4.
+dataset: tor_vergata
+selection: {rooms: [r1]}
+preprocessing: [ant2]
+window_len: 56
+stride: 1
+extractors: [{name: paper_beamforming}]
+feature_selection: null
+head: {name: random_forest}
+seeds: [0]
+role: comparison
+sweep:
+  "@setting":
+    - role: reference
+      split: 499148ef70db  # random_window, seed 0, fractions 0.6/0.2/0.2
+      preprocessing: [ant2, {recording_mean_norm: {fit_scope: whole_recording}}]
+    - role: comparison
+      split: e31e1b7dd9b4  # time_block
+      preprocessing: [ant2, {recording_mean_norm: {fit_scope: train}}]
+  "@rooms":
+    - {selection.rooms: [r1], feature_selection: null}
+    - {selection.rooms: [r2], feature_selection: null}
+    - {selection.rooms: [r1, r2], feature_selection: {mrmr: {k: [4]}}}

@@ -56,8 +56,17 @@ def _index(node: list[Any], part: str, path: str) -> Any:
     return node[_position(node, part, path)]
 
 
+def _overlap(a: str, b: str) -> bool:
+    """Whether dotted paths `a` and `b` set the same field (equal, or one inside the other)."""
+    return a == b or a.startswith(b + ".") or b.startswith(a + ".")
+
+
 def expand_sweep(raw: Any, source: str = "sweep") -> list[tuple[dict[str, Any], ExperimentConfig]]:
-    """Cartesian product in file order (first key slowest), all validated, deduped by run id."""
+    """Cartesian product in file order (first key slowest), all validated, deduped by run id.
+
+    A key starting with `@` is a paired axis: each value is a mapping of dotted paths applied
+    together, so fields that must change jointly (role, split, preprocessing) are never crossed.
+    """
     if not isinstance(raw, dict):
         raise ConfigError(f"{source}: config must be a mapping")
     base = {k: v for k, v in raw.items() if k != "sweep"}
@@ -66,13 +75,43 @@ def expand_sweep(raw: Any, source: str = "sweep") -> list[tuple[dict[str, Any], 
         sweep = {}
     if not isinstance(sweep, dict):
         raise ConfigError(f"{source}: sweep must be a mapping of dotted paths to value lists")
+    owners: dict[str, str] = {}  # every path an axis sets -> that axis
     for key, values in sweep.items():
         path = str(key)
-        if path == "seeds" or path.startswith("seeds."):
-            raise ConfigError(f"{source}: sweep.{path}: seeds cannot be swept")
-        _tokens(path)
-        if not isinstance(values, list) or not values:
-            raise ConfigError(f"{source}: sweep.{path}: expected a non-empty list of values")
+        if path.startswith("@"):
+            if len(path) < 2:
+                raise ConfigError(f"{source}: sweep.{path}: paired axis needs a name")
+            if not isinstance(values, list) or not values:
+                raise ConfigError(f"{source}: sweep.{path}: expected a non-empty list of mappings")
+            paths: set[str] = set()
+            for i, entry in enumerate(values):
+                if not isinstance(entry, dict) or not entry:
+                    raise ConfigError(f"{source}: sweep.{path}.{i}: expected a non-empty mapping")
+                subs = [str(sub) for sub in entry]
+                for j, sub_path in enumerate(subs):
+                    _tokens(sub_path)
+                    if sub_path == "seeds" or sub_path.startswith("seeds."):
+                        raise ConfigError(f"{source}: sweep.{path}.{i}: seeds cannot be swept")
+                    clash = next((o for o in subs[:j] if _overlap(o, sub_path)), None)
+                    if clash is not None:
+                        raise ConfigError(
+                            f"{source}: sweep.{path}.{i}: {clash} and {sub_path} set the same field"
+                        )
+                paths.update(subs)
+        else:
+            if path == "seeds" or path.startswith("seeds."):
+                raise ConfigError(f"{source}: sweep.{path}: seeds cannot be swept")
+            _tokens(path)
+            if not isinstance(values, list) or not values:
+                raise ConfigError(f"{source}: sweep.{path}: expected a non-empty list of values")
+            paths = {path}
+        for p in sorted(paths):
+            other = next((o for o in owners if _overlap(o, p)), None)
+            if other is not None:
+                raise ConfigError(
+                    f"{source}: sweep.{path}: {p} is also set by sweep.{owners[other]}"
+                )
+        owners.update(dict.fromkeys(paths, path))
     keys = [str(k) for k in sweep]
     out: list[tuple[dict[str, Any], ExperimentConfig]] = []
     seen: set[str] = set()
@@ -81,7 +120,11 @@ def expand_sweep(raw: Any, source: str = "sweep") -> list[tuple[dict[str, Any], 
         candidate = deepcopy(base)
         try:
             for path, value in overrides.items():
-                _set_path(candidate, path, deepcopy(value))
+                if path.startswith("@"):
+                    for sub_path, sub_value in value.items():
+                        _set_path(candidate, str(sub_path), deepcopy(sub_value))
+                else:
+                    _set_path(candidate, path, deepcopy(value))
             config = config_from_dict(candidate, source)
         except ConfigError as e:
             raise ConfigError(f"{e} (overrides: {overrides})") from e

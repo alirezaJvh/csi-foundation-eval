@@ -130,13 +130,13 @@ def test_config_validation_rejects_comparison_on_window_plan(tmp_path, monkeypat
 
     discover()
     plan = dataclasses.replace(_split(), dataset="tor_vergata")
-    write_split_plan(
-        dataclasses.replace(plan, split_hash=compute_split_hash(plan)), tmp_path / "splits"
-    )
+    plan = dataclasses.replace(plan, split_hash=compute_split_hash(plan))
+    write_split_plan(plan, tmp_path / "splits")
     monkeypatch.chdir(tmp_path)
+    # a window plan is never picked implicitly: it needs an explicit `split`
     with pytest.raises(ConfigError, match="role: reference"):
-        config_from_dict(_raw("comparison"))
-    config_from_dict(_raw("reference"))
+        config_from_dict({**_raw("comparison"), "split": plan.split_hash})
+    config_from_dict({**_raw("reference"), "split": plan.split_hash})
 
 
 def test_missing_plan_passes_validation(tmp_path, monkeypatch):
@@ -153,12 +153,14 @@ def test_window_plan_roundtrip(tmp_path):
     assert load_split_plan(path, _recs()) == plan
 
 
-def test_committed_block_plans_keep_hash_and_load():
+def test_committed_plans_keep_hash_and_load():
+    """Block plans stay unit-less (old hashes unchanged); window plans load without the data."""
     paths = sorted(COMMITTED.glob("*.json"))
     assert paths
     for path in paths:
         raw = json.loads(path.read_text())
-        assert "unit" not in raw
+        assert raw.get("unit", "block") in ("block", "window")
+        assert raw.get("unit") != "block"  # block plans omit the key
         recs = [
             Recording(
                 csi=np.zeros((1, 1, 1), dtype=np.complex64),
@@ -174,5 +176,5 @@ def test_committed_block_plans_keep_hash_and_load():
             for rid, sha in raw["source_sha256"].items()
         ]
         plan = load_split_plan(path, recs)
-        assert plan.unit == "block"
+        assert plan.unit == raw.get("unit", "block")
         assert compute_split_hash(plan) == plan.split_hash == path.stem

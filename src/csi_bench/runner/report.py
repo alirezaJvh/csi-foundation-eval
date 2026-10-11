@@ -11,7 +11,8 @@ import pyarrow.parquet as pq
 import yaml
 
 from csi_bench.core import results_schema as rs
-from csi_bench.core.errors import ConfigError
+from csi_bench.core.errors import ConfigError, DataError
+from csi_bench.core.splitplan import find_split, read_plan_unit
 from csi_bench.results_api import load_metrics
 
 DEFAULT_REFERENCE = "experiments/published_reference.yaml"
@@ -111,12 +112,62 @@ def _command(row: dict, root: Path) -> str:
     return f"csi-bench run {rs.config_path(row['run_id'], root)}"
 
 
-def _comparison(rows: list[dict], root: Path, published: dict | None) -> list[str]:
+def _best(rows: list[dict]) -> dict[tuple[str, str], dict]:
+    """The best-validation row per (method, room setting)."""
     best: dict[tuple[str, str], dict] = {}
     for r in rows:
         key = (r["method"], r["room_setting"])
         if key not in best or r["val_macro_f1_mean"] > best[key]["val_macro_f1_mean"]:
             best[key] = r
+    return best
+
+
+def _on_window_plan(row: dict) -> bool:
+    """Whether the run used a committed window-unit (random_window) plan; unknown plans do not."""
+    try:
+        return read_plan_unit(find_split(row["dataset"], row["split_hash"])) == "window"
+    except DataError:
+        return False
+
+
+def _leakage(reference: list[dict], comparison: list[dict], published: dict | None) -> list[str]:
+    """Test accuracy of the same method and room under the random split and the time-block split.
+
+    Only reference runs on a window-unit plan count as the random side.
+    """
+    random_rows = _best([r for r in reference if _on_window_plan(r)])
+    block_rows = _best(comparison)
+    order = {s: i for i, s in enumerate(rs.ROOM_SETTINGS)}
+    keys = sorted(
+        set(random_rows) | set(block_rows), key=lambda k: (k[0], order.get(k[1], len(order)))
+    )
+
+    def acc(row: dict | None) -> float | None:
+        return None if row is None else 100 * row["test_accuracy_mean"]
+
+    body = []
+    for method, room in keys:
+        random_acc = acc(random_rows.get((method, room)))
+        block_acc = acc(block_rows.get((method, room)))
+        diff = None if random_acc is None or block_acc is None else random_acc - block_acc
+        pub = None if published is None or random_acc is None else published.get(room)
+        body.append(
+            [
+                method,
+                room,
+                "-" if random_acc is None else f"{random_acc:.2f}",
+                "-" if block_acc is None else f"{block_acc:.2f}",
+                "-" if diff is None else f"{diff:+.2f}",
+                "-" if pub is None else f"{pub:.2f}",
+            ]
+        )
+    return _grid(
+        ["method", "room", "random split", "time-block split", "difference", "published"], body
+    )
+
+
+def _comparison(rows: list[dict], root: Path, published: dict | None) -> list[str]:
+    best = _best(rows)
     methods = sorted({m for m, _ in best})
     body = [
         [m, *(_cell(best[m, s]) if (m, s) in best else "-" for s in rs.ROOM_SETTINGS)]
@@ -235,5 +286,7 @@ def report(
         out += _comparison(reference, root, published)
         if all_variants:
             out += [""] + _variants(reference)
+        out += ["", "Leakage (test accuracy %, random minus time-block)", ""]
+        out += _leakage(reference, comparison, published)
     sys.stdout.write("\n".join(out).strip("\n") + "\n")
     return 0

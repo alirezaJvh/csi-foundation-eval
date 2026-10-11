@@ -230,3 +230,62 @@ def test_sweep_bad_worker_count_rejected_before_any_run(tmp_path, monkeypatch, c
     assert main(["sweep", path]) == 2
     assert "CSI_BENCH_WORKERS" in capsys.readouterr().err
     assert _run_dirs(tmp_path) == []
+
+
+def test_paired_axes_apply_fields_together(tmp_path, monkeypatch):
+    project = _make_project(tmp_path)
+    sweep = {
+        "@a": [{"window_len": 10, "head.name": "svm"}, {"window_len": 30, "head.name": "knn"}],
+        "@b": [{"stride": 1}, {"stride": 2}],
+    }
+    out = _expand(project, sweep, monkeypatch)
+    got = [(c.window_len, c.head.name, c.stride) for _, c in out]
+    assert got == [(10, "svm", 1), (10, "svm", 2), (30, "knn", 1), (30, "knn", 2)]
+    assert out[0][0]["@a"] == {"window_len": 10, "head.name": "svm"}
+
+
+@pytest.mark.parametrize(
+    "sweep",
+    [
+        {"@": [{"window_len": 10}]},
+        {"@a": []},
+        {"@a": {"window_len": 10}},
+        {"@a": [5]},
+        {"@a": [{}]},
+        {"@a": [{"seeds": [1]}]},
+        {"@a": [{"seeds.0": 1}]},
+        {"@a": [{"window_len": 10.5}]},
+        {"@a": [{"head": {"name": "svm"}, "head.name": "knn"}]},
+        {"window_len": [10], "@a": [{"window_len": 20}]},
+        {"@a": [{"window_len": 10}], "@b": [{"stride": 1}, {"window_len": 20}]},
+        {"head": [{"name": "svm"}], "@a": [{"head.params.c": 1}]},
+    ],
+)
+def test_bad_paired_axis_rejected(tmp_path, monkeypatch, sweep):
+    project = _make_project(tmp_path)
+    with pytest.raises(ConfigError):
+        _expand(project, sweep, monkeypatch)
+
+
+def test_invalid_paired_combo_is_rejected_with_overrides(tmp_path, monkeypatch):
+    project = _make_project(tmp_path)
+    sweep = {"@a": [{"window_len": 10}, {"role": "nonsense", "window_len": 20}]}
+    with pytest.raises(ConfigError, match="nonsense"):
+        _expand(project, sweep, monkeypatch)
+
+
+def test_find_split_ignores_window_plans_unless_named(tmp_path):
+    from csi_bench.core.errors import DataError
+    from csi_bench.core.splitplan import find_split
+
+    folder = tmp_path / "ds"
+    folder.mkdir()
+    (folder / "aaa.json").write_text('{"unit": "window"}')
+    with pytest.raises(DataError, match="no block split plan"):
+        find_split("ds", None, tmp_path)
+    (folder / "bbb.json").write_text("{}")
+    assert find_split("ds", None, tmp_path).stem == "bbb"
+    assert find_split("ds", "aaa", tmp_path).stem == "aaa"
+    (folder / "ccc.json").write_text('{"unit": "block"}')
+    with pytest.raises(DataError, match="several split plans"):
+        find_split("ds", None, tmp_path)

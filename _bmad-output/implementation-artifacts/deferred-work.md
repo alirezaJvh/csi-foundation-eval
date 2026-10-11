@@ -92,3 +92,9 @@
 - source_spec: none
   summary: Rewrite the `paper_beamforming` maths to compute each packet's amplitude and pair distances once, keeping the sum order so results stay identical.
   evidence: out of scope for Story 2.11; only if extraction is still a bottleneck after sharing.
+
+## Deferred from: code review of spec-3-2-reproduce-the-paper-and-measure-leakage.md (2026-10-11)
+
+- source_spec: spec-3-2-reproduce-the-paper-and-measure-leakage.md
+  summary: Test order dependence through shared registry state — `test_config_validation_rejects_comparison_on_window_plan` and `test_missing_plan_passes_validation` fail with `unknown dataset 'tor_vergata'; registered: none` when other modules run first.
+  evidence: pre-existing; reproduced with the 3.2 changes stashed; full suite in default order passes.

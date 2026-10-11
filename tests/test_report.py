@@ -206,3 +206,41 @@ def test_notebooks_import_only_results_api():
                         path.name,
                         mod,
                     )
+
+
+WINDOW_PLAN, BLOCK_PLAN = "499148ef70db", "e31e1b7dd9b4"  # committed under splits/tor_vergata
+
+
+def _leakage_lines(runs, capsys):
+    code, out, _ = _report(
+        runs, capsys, "--reference", str(ROOT / "experiments/published_reference.yaml")
+    )
+    assert code == 0
+    _, _, leak = out.partition("Leakage")
+    return leak.splitlines()
+
+
+def test_leakage_block_random_minus_time_block(runs, capsys, monkeypatch):
+    # r1 has both sides; the mrmr method (r2) only the comparison side
+    monkeypatch.chdir(ROOT)
+    ref = _config(["r1"], role="reference")
+    _make_run(runs, "r_r1", ref, 0.9, 0.98, split_hash=WINDOW_PLAN)
+    leak = _leakage_lines(runs, capsys)
+    assert any("random split" in line and "time-block split" in line for line in leak)
+    r1 = next(line for line in leak if line.split()[:1] == ["amplitude_stats"] and " r1 " in line)
+    # bbb is the best-validation comparison run for r1: accuracy 0.61; reference 0.99
+    assert r1.split()[-4:] == ["99.00", "61.00", "+38.00", "99.41"]
+    # no reference side: no difference and no published number
+    r2 = next(line for line in leak if " r2 " in line)
+    assert r2.split()[-4:] == ["-", "51.00", "-", "-"]
+
+
+def test_leakage_ignores_reference_runs_off_a_window_plan(runs, capsys, monkeypatch):
+    monkeypatch.chdir(ROOT)
+    ref = _config(["r1"], role="reference")
+    _make_run(runs, "r_block", ref, 0.9, 0.98, split_hash=BLOCK_PLAN)
+    _make_run(runs, "r_unknown", _config(["r2"], role="reference"), 0.9, 0.98, split_hash="nope")
+    leak = _leakage_lines(runs, capsys)
+    r1 = next(line for line in leak if line.split()[:1] == ["amplitude_stats"] and " r1 " in line)
+    assert r1.split()[-4:] == ["-", "61.00", "-", "-"]
+    assert not any("99.00" in line for line in leak)

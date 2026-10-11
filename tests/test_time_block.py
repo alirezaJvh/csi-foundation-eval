@@ -142,6 +142,8 @@ def test_committed_plans_are_consistent():
     assert paths
     for path in paths:
         raw = json.loads(path.read_text())
+        if raw.get("unit") == "window":
+            continue  # random_window plans are checked in test_random_window.py
         plan = SplitPlan(
             dataset=raw["dataset"],
             splitter=raw["splitter"],
