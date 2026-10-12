@@ -2,6 +2,7 @@ import pytest
 
 from csi_bench.core import results_schema as rs
 from csi_bench.core.contracts import Metrics
+from csi_bench.core.errors import DataError
 
 CLASSES = ("empty", "sitting")
 
@@ -48,3 +49,62 @@ def test_metrics_round_trip():
         class_names=("a", "b"),
     )
     assert rs.metrics_from_dict(rs.metrics_as_dict(m)) == m
+
+
+def _cfg(**changes):
+    return {
+        "extractors": [{"name": "paper_beamforming"}, {"name": "Amplitude Stats"}],
+        "feature_selection": None,
+        "head": {"name": "svm"},
+        "selection": {"rooms": ["r2", "r1"]},
+        "window_len": 40,
+        **changes,
+    }
+
+
+def test_run_slug_sorts_lowercases_and_sanitises():
+    assert rs.run_slug(_cfg()) == "amplitude_stats+paper_beamforming-none-svm-mixed-w40"
+    slug = rs.run_slug(_cfg(feature_selection={"name": "mRMR/x"}, selection={"rooms": ["r1"]}))
+    assert slug == "amplitude_stats+paper_beamforming-mrmr_x-svm-r1-w40"
+    assert rs.run_slug(_cfg(head={"name": "a.b c"})).split("-")[2] == "a_b_c"
+
+
+def test_run_dir_lookup_none_one_many(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        rs.run_dir("abc123", tmp_path)
+    one = rs.new_run_dir(tmp_path, "ds", "time_block", "slug", "abc123")
+    one.mkdir(parents=True)
+    (tmp_path / "_duplicates" / "x" / "y--abc123").mkdir(parents=True)
+    (tmp_path / "ds" / "time_block" / "slug--zabc123").mkdir()
+    assert rs.run_dir("abc123", tmp_path) == one
+    assert rs.metrics_path("abc123", tmp_path) == one / "metrics.json"
+    assert rs.parse_run_dir(one, tmp_path) == ("ds", "time_block", "abc123")
+    rs.new_run_dir(tmp_path, "ds", "random_window", "other", "abc123").mkdir(parents=True)
+    with pytest.raises(DataError, match="several"):
+        rs.run_dir("abc123", tmp_path)
+
+
+def test_iter_run_dirs_skips_underscore_and_non_layout(tmp_path):
+    good = rs.new_run_dir(tmp_path, "ds", "sp", "s", "id1")
+    good.mkdir(parents=True)
+    (tmp_path / "_dataset" / "a" / "b--c").mkdir(parents=True)
+    (tmp_path / "legacy" / "0123456789ab").mkdir(parents=True)
+    (tmp_path / "ds" / "sp" / "noseparator").mkdir()
+    assert rs.iter_run_dirs(tmp_path) == [good]
+    assert rs.iter_run_dirs(tmp_path / "missing") == []
+    with pytest.raises(DataError):
+        rs.parse_run_dir(tmp_path / "ds" / "sp" / "noseparator", tmp_path)
+
+
+def test_index_schema_gains_interval_fields_at_the_end():
+    names = rs.INDEX_TABLE_SCHEMA.names
+    added = [name for name, _ in rs.INTERVAL_FIELDS]
+    assert added == [
+        "test_macro_f1_lo",
+        "test_macro_f1_hi",
+        "test_accuracy_lo",
+        "test_accuracy_hi",
+        "single_recording_classes",
+    ]
+    assert names[-len(added) :] == added
+    assert names[: -len(added)][-1] == "test_accuracy_std"

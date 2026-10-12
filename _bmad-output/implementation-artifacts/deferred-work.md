@@ -109,3 +109,12 @@
   summary: Variance of the headline numbers — seeds only change head randomness (random_forest, mlp, logreg); svm and knn are deterministic, and the time-block split is fixed. Test-set variance (19 test blocks) needs per-recording or bootstrap confidence intervals, or several time-block plans.
   evidence: every reported std is ±0.00 (1 seed); differences under ~1–2 points between methods are not established.
   planned: Epic 4, Story 4.3 (confidence intervals), per sprint-change-proposal-2026-10-11.
+
+## Deferred from: code review of spec-4-1-readable-run-layout-and-report-section-per-protocol.md (2026-10-11)
+
+- The failure path of `migrate_runs` (exit 2 after a partial move, with an index refresh) has no test (`src/csi_bench/runner/migrate.py:775`). The migration is a one-off and reruns are idempotent, and the next `report` rebuilds the index anyway.
+  resolved: 2026-10-11, in the same review (`test_failure_midway_lists_what_moved_and_refreshes_index`).
+
+## Deferred from: code review of spec-4-2-room-holdout-splitter.md (2026-10-11)
+
+- No CLI command or script regenerates the committed `room_holdout` plans (`splits/tor_vergata/1e8688472a1f.json`, `c4faaf799ad5.json`); they are built only by calling `write_split_plan(RoomHoldout(...).split(...))` from Python. This predates the story: `time_block` plans have no generator command either. A `csi-bench split` command would cover both.

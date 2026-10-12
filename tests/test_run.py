@@ -83,10 +83,7 @@ def _config_file(tmp_path: Path, **changes) -> str:
 
 
 def _run_dirs(tmp_path: Path) -> list[Path]:
-    runs = tmp_path / "runs"
-    if not runs.is_dir():
-        return []
-    return sorted(p for p in runs.iterdir() if p.is_dir() and p.name != "_dataset")
+    return rs.iter_run_dirs(tmp_path / "runs")
 
 
 def _status(run_dir: Path) -> dict:
@@ -109,6 +106,9 @@ def test_happy_path_writes_all_artifacts(tmp_path, monkeypatch, capsys):
     ):
         assert path.is_file(), path
     assert _status(rs.run_dir(run_id, root))["status"] == "done"
+    layout = root / "tor_vergata" / "time_block" / f"amplitude_stats-none-logreg-r1-w40--{run_id}"
+    assert rs.run_dir(run_id, root) == layout
+    assert _run_dirs(tmp_path) == [layout]
 
     predictions = pq.read_table(rs.predictions_path(run_id, 0, root))
     assert predictions.schema.equals(rs.PREDICTIONS_TABLE_SCHEMA)
@@ -315,6 +315,28 @@ def test_multi_seed_run(tmp_path, monkeypatch, capsys):
     metrics = json.loads(rs.metrics_path(run_id, root).read_text())
     assert set(metrics["seeds"]) == {"0", "1", "2"}
     assert len(metrics["mean_std"]["test"]["macro_f1"]) == 2
+    _assert_intervals_cover_means(metrics)
+
+
+def _assert_intervals_cover_means(metrics: dict) -> None:
+    test = metrics["intervals"]["test"]
+    assert set(metrics["intervals"]) == {"test"}
+    assert test["unit"] == "recording" and test["n_resamples"] == 1000
+    assert test["seed"] == 0 and test["level"] == 0.95
+    assert set(test["single_recording_classes"]) <= set(metrics["class_names"])
+    for score in ("accuracy", "macro_f1"):
+        lo, hi = test[score]
+        assert lo <= metrics["mean_std"]["test"][score][0] <= hi
+
+
+def test_run_stores_test_intervals(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert main(["run", _config_file(tmp_path)]) == 0
+    run_id = _run_id(capsys)
+    metrics = json.loads(rs.metrics_path(run_id, tmp_path / "runs").read_text())
+    _assert_intervals_cover_means(metrics)
+    assert set(metrics) == {"class_names", "seeds", "mean_std", "intervals"}
 
 
 def test_runtime_provenance(tmp_path, monkeypatch, capsys):
@@ -370,6 +392,7 @@ def test_add_a_seed_runs_only_the_new_seed(tmp_path, monkeypatch, capsys):
     for s in ("0", "1", "2"):
         assert after["seeds"][s] == before["seeds"][s]
     assert rs.predictions_path(run_id, 3, root).is_file()
+    _assert_intervals_cover_means(after)  # computed over the resumed and the fresh seeds
     for split, stats in after["mean_std"].items():
         for metric, (mean, std) in stats.items():
             values = [after["seeds"][str(s)][split][metric] for s in range(4)]
@@ -446,6 +469,31 @@ def test_run_without_a_split_plan_is_a_data_error(tmp_path, monkeypatch, capsys)
     assert main(["run", _config_file(tmp_path)]) == 2
     assert "no split plan" in capsys.readouterr().err
     assert _run_dirs(tmp_path) == []
+
+
+def test_run_leaves_the_unknown_section_once_the_plan_resolves(tmp_path, monkeypatch, capsys):
+    from csi_bench.core.errors import DataError
+    from csi_bench.runner import run as run_module
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    def unreadable(path):
+        raise DataError(f"{path}: unreadable split plan")
+
+    with monkeypatch.context() as m:
+        m.setattr(run_module, "read_plan_splitter", unreadable)
+        assert main(["run", _config_file(tmp_path)]) == 0
+    run_id = capsys.readouterr().out.strip()
+    root = tmp_path / "runs"
+    assert rs.parse_run_dir(rs.run_dir(run_id, root), root)[1] == rs.UNKNOWN
+    # a new seed resumes the run, which now moves into its splitter's section
+    assert main(["run", _config_file(tmp_path, seeds=[0, 1])]) == 0
+    (moved,) = _run_dirs(tmp_path)
+    assert rs.parse_run_dir(moved, root)[1:] == ("time_block", run_id)
+    assert (moved / "seeds" / "0" / "predictions.parquet").is_file()
+    assert (moved / "seeds" / "1" / "predictions.parquet").is_file()
+    assert not any((root / "tor_vergata" / rs.UNKNOWN).iterdir())  # emptied, left in place
 
 
 def test_run_with_several_split_plans_is_a_data_error(tmp_path, monkeypatch, capsys):
@@ -869,7 +917,7 @@ def _run_capture(tmp_path, monkeypatch, label, workers, **changes):
     root = tmp_path / f"runs_{label}"
     code = run(_config_file(tmp_path, **changes), root, tmp_path / f"cache_{label}", workers)
     assert code == 0
-    (run_dir,) = [d for d in root.iterdir() if d.is_dir()]
+    (run_dir,) = rs.iter_run_dirs(root)
     metrics = json.loads((run_dir / "metrics.json").read_text())
     return captured[-1], metrics
 

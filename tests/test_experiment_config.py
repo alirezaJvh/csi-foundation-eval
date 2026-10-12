@@ -276,3 +276,23 @@ def test_feature_selection_null_keeps_run_id(tmp_path):
 def test_bad_feature_selection_shape(tmp_path, entry, match):
     with pytest.raises(ConfigError, match=match):
         _load(tmp_path, feature_selection=entry)
+
+
+ROOM_HOLDOUT_PLANS = ("1e8688472a1f", "c4faaf799ad5")  # r1→r2, r2→r1 (committed)
+
+
+@pytest.mark.parametrize("split", ROOM_HOLDOUT_PLANS)
+def test_room_holdout_needs_both_rooms(tmp_path, split):
+    config = _load(tmp_path, split=split, selection={"rooms": ["r2", "r1"]})
+    assert config.split == split
+    with pytest.raises(ConfigError, match=r"\['r1'\].*\['r1', 'r2'\]"):
+        _load(tmp_path, split=split, selection={"rooms": ["r1"]})
+    with pytest.raises(ConfigError, match="room_holdout split requires role: comparison"):
+        _load(tmp_path, split=split, selection={"rooms": ["r1", "r2"]}, role="reference")
+
+
+def test_implicit_split_ignores_room_holdout_plans(tmp_path):
+    from csi_bench.config.experiment import resolved_body
+
+    config = _load(tmp_path)
+    assert resolved_body(config)["split"] not in ROOM_HOLDOUT_PLANS

@@ -2,6 +2,7 @@
 
 from csi_bench.core.contracts import Recording
 from csi_bench.core.ports import Splitter
+from csi_bench.core.splitplan import ROOM_HOLDOUT
 
 
 def check_splitter(splitter: Splitter, recordings: list[Recording], dataset: str) -> None:
@@ -15,10 +16,13 @@ def check_splitter(splitter: Splitter, recordings: list[Recording], dataset: str
         b = plan.blocks[rec.recording_id]
         spans = [b["train"], b["val"], b["test"]]
         for start, end in spans:
-            assert 0 <= start < end <= rec.meta.n_packets
+            assert 0 <= start <= end <= rec.meta.n_packets
+            if plan.splitter != ROOM_HOLDOUT:
+                assert start < end  # only room_holdout has empty parts (start == end)
         if plan.unit == "window":
             # the Windower assigns windows; every part spans the whole recording
             assert all(span == (0, rec.meta.n_packets) for span in spans)
             continue
-        for (_, prev_end), (next_start, _) in zip(spans, spans[1:], strict=False):
+        filled = [span for span in spans if span[0] < span[1]]
+        for (_, prev_end), (next_start, _) in zip(filled, filled[1:], strict=False):
             assert next_start - prev_end >= plan.gap_packets

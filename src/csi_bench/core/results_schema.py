@@ -1,10 +1,13 @@
 """Column names, paths and schemas of everything the benchmark writes (AD-13)."""
 
+import glob
+import re
 from pathlib import Path
 
 import pyarrow as pa
 
 from csi_bench.core.contracts import Metrics
+from csi_bench.core.errors import DataError
 
 SCOPES = ("recording", "class", "room", "total")
 
@@ -44,8 +47,90 @@ PREDICTIONS_TABLE_SCHEMA = pa.schema(
 )
 
 
+RUN_ID_SEPARATOR = "--"
+UNKNOWN = "unknown"
+DUPLICATES = "_duplicates"
+_SLUG_UNSAFE = re.compile(r"[^a-z0-9_+-]")
+
+
+DIRECTION = "→"
+
+
+def run_slug(config: dict, rooms: str | None = None) -> str:
+    """`<extractors>-<selector>-<head>-<rooms>-w<window_len>`, sanitised to `[a-z0-9_+-]`.
+
+    `rooms` overrides the room part (a `room_holdout` direction like `r1→r2`, written
+    `r1_to_r2`). Only for reading the store by eye: `run_id` stays the sole identity.
+    """
+    extractors = "+".join(sorted(e["name"] for e in config["extractors"]))
+    selector = (config.get("feature_selection") or {}).get("name", "none")
+    if rooms is None:
+        rooms = room_setting(config["selection"]["rooms"])
+    rooms = rooms.replace(DIRECTION, "_to_")
+    raw = f"{extractors}-{selector}-{config['head']['name']}-{rooms}-w{config['window_len']}"
+    return _SLUG_UNSAFE.sub("_", raw.lower())
+
+
+def new_run_dir(root: str | Path, dataset: str, splitter: str, slug: str, run_id: str) -> Path:
+    """Where a run with no directory yet is created: `<root>/<dataset>/<splitter>/<slug>--<id>`."""
+    return Path(root) / dataset / splitter / f"{slug}{RUN_ID_SEPARATOR}{run_id}"
+
+
+def duplicates_dir(root: str | Path, origin: str | Path) -> Path:
+    """Where losing copies of a run from `<root>/<origin>` are parked; the report ignores it."""
+    return Path(root) / DUPLICATES / origin
+
+
+def parse_run_dir(path: str | Path, root: str | Path = "runs") -> tuple[str, str, str]:
+    """`(dataset, splitter, run_id)` of a layout run directory; `DataError` for anything else."""
+    try:
+        parts = Path(path).relative_to(Path(root)).parts
+    except ValueError as e:
+        raise DataError(f"{path}: not under {root}") from e
+    if len(parts) != 3 or parts[0].startswith("_") or RUN_ID_SEPARATOR not in parts[2]:
+        raise DataError(f"{path}: not a run directory <dataset>/<splitter>/<slug>--<run_id>")
+    run_id = parts[2].rpartition(RUN_ID_SEPARATOR)[2]
+    if not run_id:
+        raise DataError(f"{path}: empty run_id")
+    return parts[0], parts[1], run_id
+
+
+def iter_run_dirs(root: str | Path = "runs") -> list[Path]:
+    """Every layout run directory under `root`, sorted; `_`-prefixed folders are skipped."""
+    root = Path(root)
+    if not root.is_dir():
+        return []
+    found = []
+    for path in root.glob(f"*/*/*{RUN_ID_SEPARATOR}*"):
+        if not path.is_dir():
+            continue
+        try:
+            parse_run_dir(path, root)
+        except DataError:
+            continue
+        found.append(path)
+    return sorted(found)
+
+
 def run_dir(run_id: str, root: str | Path = "runs") -> Path:
-    return Path(root) / run_id
+    """The existing directory of `run_id`; `FileNotFoundError` if none, `DataError` if several."""
+    root = Path(root)
+    matches = []
+    if root.is_dir():
+        pattern = f"*/*/*{RUN_ID_SEPARATOR}{glob.escape(run_id)}"
+        for path in root.glob(pattern):
+            try:
+                found = parse_run_dir(path, root)[2]
+            except DataError:
+                continue
+            if found == run_id and path.is_dir():
+                matches.append(path)
+    if not matches:
+        raise FileNotFoundError(f"no run directory for {run_id} under {root}")
+    if len(matches) > 1:
+        listed = ", ".join(str(p) for p in sorted(matches))
+        raise DataError(f"run {run_id} has several directories: {listed}")
+    return matches[0]
 
 
 def config_path(run_id: str, root: str | Path = "runs") -> Path:
@@ -139,12 +224,22 @@ def metrics_document(
 
 ROOM_SETTINGS = ("r1", "r2", "mixed")
 
+# `intervals.test` of `metrics.json` in the index; null for a run without intervals.
+INTERVAL_FIELDS = (
+    ("test_macro_f1_lo", pa.float64()),
+    ("test_macro_f1_hi", pa.float64()),
+    ("test_accuracy_lo", pa.float64()),
+    ("test_accuracy_hi", pa.float64()),
+    ("single_recording_classes", pa.string()),
+)
+
 INDEX_TABLE_SCHEMA = pa.schema(
     [
         ("run_id", pa.string()),
         ("status", pa.string()),
         ("role", pa.string()),
         ("dataset", pa.string()),
+        ("splitter", pa.string()),
         ("split_hash", pa.string()),
         ("dirty", pa.bool_()),
         ("method", pa.string()),
@@ -161,6 +256,7 @@ INDEX_TABLE_SCHEMA = pa.schema(
         ("test_macro_f1_std", pa.float64()),
         ("test_accuracy_mean", pa.float64()),
         ("test_accuracy_std", pa.float64()),
+        *INTERVAL_FIELDS,
     ]
 )
 
@@ -175,3 +271,8 @@ def room_setting(rooms: list[str]) -> str:
     if chosen == ["r1", "r2"]:
         return "mixed"
     return "+".join(chosen)
+
+
+def room_direction(train_rooms: list[str], test_rooms: list[str]) -> str:
+    """The report column of a `room_holdout` run, e.g. `r1→r2`."""
+    return f"{room_setting(train_rooms)}{DIRECTION}{room_setting(test_rooms)}"

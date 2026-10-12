@@ -11,7 +11,12 @@ from csi_bench.adapters.splitters.time_block import TimeBlock
 from csi_bench.core import registry
 from csi_bench.core.contracts import Recording, RecordingMeta, SplitPlan
 from csi_bench.core.errors import ConfigError, DataError
-from csi_bench.core.splitplan import compute_split_hash, load_split_plan, write_split_plan
+from csi_bench.core.splitplan import (
+    ROOM_HOLDOUT,
+    compute_split_hash,
+    load_split_plan,
+    write_split_plan,
+)
 from csi_bench.runner.discover import discover
 from tests.contracts.splitter import check_splitter
 
@@ -157,8 +162,12 @@ def test_committed_plans_are_consistent():
         assert set(plan.blocks) == set(plan.source_sha256)
         for b in plan.blocks.values():
             spans = [b["train"], b["val"], b["test"]]
-            assert all(0 <= s < e for s, e in spans)
-            for (_, prev_end), (next_start, _) in zip(spans, spans[1:], strict=False):
+            assert all(0 <= s <= e for s, e in spans)
+            if plan.splitter != ROOM_HOLDOUT:
+                assert all(s < e for s, e in spans)  # only room_holdout has empty parts
+            filled = [span for span in spans if span[0] < span[1]]
+            assert filled
+            for (_, prev_end), (next_start, _) in zip(filled, filled[1:], strict=False):
                 assert next_start - prev_end >= plan.gap_packets
 
 

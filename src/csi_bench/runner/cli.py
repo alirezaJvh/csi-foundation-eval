@@ -15,6 +15,7 @@ from csi_bench.core.errors import ConfigError, DataError
 from csi_bench.core.results_schema import DATASET_TABLE_SCHEMA, SCOPES, dataset_table_path
 from csi_bench.core.splitplan import PARTS, find_split, load_split_plan
 from csi_bench.runner.discover import discover
+from csi_bench.runner.migrate import migrate_runs
 from csi_bench.runner.report import DEFAULT_REFERENCE, report
 from csi_bench.runner.run import run, run_sweep
 
@@ -136,6 +137,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--all-variants", action="store_true", help="list every run's variant")
     p.add_argument("--include-dirty", action="store_true", help="include runs made on a dirty tree")
     p.add_argument("--reference", default=DEFAULT_REFERENCE, help="published reference values")
+    m = sub.add_parser(
+        "migrate-runs",
+        help="move legacy runs/<run_id>/ dirs into the readable layout and backfill test "
+        "confidence intervals from saved predictions",
+    )
+    m.add_argument("--runs", default="runs", help="results directory")
     try:
         args = parser.parse_args(argv)
     except SystemExit as e:
@@ -144,6 +151,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run(args.config, workers=args.workers)
     if args.command == "sweep":
         return run_sweep(args.file, args.force, workers=args.workers)
+    if args.command == "migrate-runs":
+        return migrate_runs(args.runs)
     if args.command == "report":
         return report(args.runs, args.all_variants, args.include_dirty, args.reference)
     return describe(args.dataset, args.split)

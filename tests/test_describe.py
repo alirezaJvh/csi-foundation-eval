@@ -152,3 +152,28 @@ def test_describe_window_plan_has_no_part_counts(project, capsys):
     assert all(r[p] is None for r in rows for p in ("train", "val", "test"))
     (total,) = [r for r in rows if r["scope"] == "total"]
     assert total["n_packets"] == sum(1000 + i for i in range(4))
+
+
+def test_describe_room_holdout_split(project, capsys):
+    from csi_bench.adapters.datasets.tor_vergata import TorVergata
+    from csi_bench.adapters.splitters.room_holdout import RoomHoldout
+
+    data = project / "data/csi_proc_python/saved_csi"
+    for name in ("r2_walk_1", "r2_standing_1"):  # the test room needs the train room's classes
+        (data / f"{name}.npy").unlink()
+    for i, name in enumerate(("r2_empty_1", "r2_sit_1")):
+        np.save(data / f"{name}.npy", np.full((4, 900 + i, 3), i, dtype=np.complex64))
+    _plan()  # a time_block plan too, so the holdout plan must be chosen with --split
+    params = RoomHoldout.Params(train_rooms=["r1"], test_rooms=["r2"])
+    path = write_split_plan(RoomHoldout(params).split(TorVergata().load(), "tor_vergata"))
+    assert main(["describe", "tor_vergata", "--split", path.stem]) == 0
+    capsys.readouterr()
+    rows = pq.read_table(dataset_table_path("tor_vergata")).to_pylist()
+    rec = {r["recording_id"]: r for r in rows if r["scope"] == "recording"}
+    assert len(rec) == 4
+    for rid, r in rec.items():
+        assert r["split_hash"] == path.stem
+        if "/r2_" in rid:
+            assert (r["train"], r["val"], r["test"]) == (0, 0, r["n_packets"])
+        else:
+            assert r["train"] > 0 and r["val"] > 0 and r["test"] == 0

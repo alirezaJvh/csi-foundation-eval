@@ -12,8 +12,9 @@ import yaml
 
 from csi_bench.core import results_schema as rs
 from csi_bench.core.errors import ConfigError, DataError
-from csi_bench.core.splitplan import find_split, read_plan_unit
+from csi_bench.core.splitplan import ROOM_HOLDOUT, find_split, read_plan_params
 from csi_bench.results_api import load_metrics
+from csi_bench.runner.migrate import find_legacy_dirs
 
 DEFAULT_REFERENCE = "experiments/published_reference.yaml"
 _SCORES = ("macro_f1", "accuracy")
@@ -41,8 +42,20 @@ def _variant(config: dict) -> str:
     return json.dumps({k: v for k, v in parts.items() if v not in (None, {}, [])}, sort_keys=True)
 
 
-def _index_row(run_id: str, root: Path) -> dict[str, Any] | None:
+def _room_column(config: dict, dataset: str, splitter: str, split_root: str | Path) -> str:
+    """The report column: the room setting, or the direction (`r1→r2`) of a `room_holdout` plan."""
+    if splitter == ROOM_HOLDOUT:
+        try:
+            params = read_plan_params(find_split(dataset, config.get("split"), split_root))
+            return rs.room_direction(params["train_rooms"], params["test_rooms"])
+        except (DataError, KeyError, TypeError):
+            pass
+    return rs.room_setting(config["selection"]["rooms"])
+
+
+def _index_row(path: Path, root: Path, split_root: str | Path = "splits") -> dict[str, Any] | None:
     try:
+        dataset, splitter, run_id = rs.parse_run_dir(path, root)
         config = yaml.safe_load(rs.config_path(run_id, root).read_text(encoding="utf-8"))
         status = _read_json(rs.status_path(run_id, root))["status"]
         row: dict[str, Any] = dict.fromkeys(f.name for f in rs.INDEX_TABLE_SCHEMA)
@@ -50,16 +63,17 @@ def _index_row(run_id: str, root: Path) -> dict[str, Any] | None:
             run_id=run_id,
             status=status,
             role=config["role"],
-            dataset=config["dataset"],
+            dataset=dataset,
+            splitter=splitter,
             dirty=False,
             method=_method(config),
-            room_setting=rs.room_setting(config["selection"]["rooms"]),
+            room_setting=_room_column(config, dataset, splitter, split_root),
             window_len=config["window_len"],
             stride=config["stride"],
             variant=_variant(config),
             n_seeds=len(config["seeds"]),
         )
-    except (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError):
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError, DataError):
         return None
     try:
         provenance = _read_json(rs.provenance_path(run_id, root))
@@ -73,20 +87,32 @@ def _index_row(run_id: str, root: Path) -> dict[str, Any] | None:
         row["split_hash"] = provenance["split_hash"]
         row["dirty"] = bool(provenance["git"]["dirty"])
         row.update(scores)
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError, DataError):
+        pass
+    try:
+        test = _read_json(rs.metrics_path(run_id, root))["intervals"]["test"]
+        bounds = {
+            f"test_{score}_{side}": float(test[score][i])
+            for score in _SCORES
+            for i, side in enumerate(("lo", "hi"))
+        }
+        single = ",".join(str(c) for c in test["single_recording_classes"])
+        row.update(bounds, single_recording_classes=single)
+    except (OSError, ValueError, KeyError, TypeError, IndexError, DataError):
         pass
     return row
 
 
-def refresh_index(root: str | Path = "runs") -> list[dict[str, Any]]:
+def refresh_index(
+    root: str | Path = "runs", split_root: str | Path = "splits"
+) -> list[dict[str, Any]]:
     """Rebuild `runs/index.parquet` from the run directories and return its rows."""
     root = Path(root)
     rows: list[dict[str, Any]] = []
-    if root.is_dir():
-        for path in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith("_")):
-            row = _index_row(path.name, root)
-            if row is not None:
-                rows.append(row)
+    for path in rs.iter_run_dirs(root):
+        row = _index_row(path, root, split_root)
+        if row is not None:
+            rows.append(row)
     root.mkdir(parents=True, exist_ok=True)
     pq.write_table(pa.Table.from_pylist(rows, schema=rs.INDEX_TABLE_SCHEMA), rs.index_path(root))
     return rows
@@ -96,8 +122,24 @@ def _pm(row: dict, split: str, score: str) -> str:
     return f"{100 * row[f'{split}_{score}_mean']:.2f}±{100 * row[f'{split}_{score}_std']:.2f}"
 
 
+def _interval(row: dict, score: str) -> str:
+    lo, hi = row.get(f"test_{score}_lo"), row.get(f"test_{score}_hi")
+    if lo is None or hi is None:
+        return "[-]"
+    return f"[{100 * lo:.2f}, {100 * hi:.2f}]"
+
+
+def _single(row: dict) -> list[str]:
+    return [c for c in (row.get("single_recording_classes") or "").split(",") if c]
+
+
 def _cell(row: dict) -> str:
-    return f"F1 {_pm(row, 'test', 'macro_f1')} acc {_pm(row, 'test', 'accuracy')}"
+    """`F1 <mean> [lo, hi] acc <mean> [lo, hi]`, with `*` if a class has one test recording."""
+    scores = " ".join(
+        f"{label} {100 * row[f'test_{score}_mean']:.2f} {_interval(row, score)}"
+        for label, score in (("F1", "macro_f1"), ("acc", "accuracy"))
+    )
+    return f"{scores} *" if _single(row) else scores
 
 
 def _grid(header: list[str], body: list[list[str]]) -> list[str]:
@@ -122,21 +164,14 @@ def _best(rows: list[dict]) -> dict[tuple[str, str], dict]:
     return best
 
 
-def _on_window_plan(row: dict) -> bool:
-    """Whether the run used a committed window-unit (random_window) plan; unknown plans do not."""
-    try:
-        return read_plan_unit(find_split(row["dataset"], row["split_hash"])) == "window"
-    except DataError:
-        return False
-
-
-def _leakage(reference: list[dict], comparison: list[dict], published: dict | None) -> list[str]:
+def _leakage(random_side: list[dict], block_side: list[dict], published: dict | None) -> list[str]:
     """Test accuracy of the same method and room under the random split and the time-block split.
 
-    Only reference runs on a window-unit plan count as the random side.
+    The random side is the reference runs of the dataset's `random_window` section, the
+    time-block side the comparison runs of its `time_block` section.
     """
-    random_rows = _best([r for r in reference if _on_window_plan(r)])
-    block_rows = _best(comparison)
+    random_rows = _best(random_side)
+    block_rows = _best(block_side)
     order = {s: i for i, s in enumerate(rs.ROOM_SETTINGS)}
     keys = sorted(
         set(random_rows) | set(block_rows), key=lambda k: (k[0], order.get(k[1], len(order)))
@@ -166,16 +201,24 @@ def _leakage(reference: list[dict], comparison: list[dict], published: dict | No
     )
 
 
-def _comparison(rows: list[dict], root: Path, published: dict | None) -> list[str]:
+def _comparison(
+    rows: list[dict],
+    root: Path,
+    published: dict | None,
+    columns: tuple[str, ...] | list[str] = rs.ROOM_SETTINGS,
+) -> list[str]:
     best = _best(rows)
     methods = sorted({m for m, _ in best})
-    body = [
-        [m, *(_cell(best[m, s]) if (m, s) in best else "-" for s in rs.ROOM_SETTINGS)]
-        for m in methods
-    ]
+    body = [[m, *(_cell(best[m, s]) if (m, s) in best else "-" for s in columns)] for m in methods]
     if published is not None:
-        body.append(["published (accuracy)", *(f"{published[s]:.2f}" for s in rs.ROOM_SETTINGS)])
-    lines = _grid(["method", *rs.ROOM_SETTINGS], body)
+        body.append(["published (accuracy)", *(f"{published[s]:.2f}" for s in columns)])
+    lines = _grid(["method", *columns], body)
+    lines += [
+        f"* {s} / {m}: single test recording for {', '.join(_single(best[m, s]))}"
+        for m in methods
+        for s in columns
+        if (m, s) in best and _single(best[m, s])
+    ]
     lines.append("")
     lines += [
         f"{m} / {s}: {_command(best[m, s], root)}"
@@ -194,12 +237,14 @@ def _variants(rows: list[dict]) -> list[str]:
             r["variant"],
             _pm(r, "val", "macro_f1"),
             _pm(r, "test", "macro_f1"),
+            _interval(r, "macro_f1"),
             _pm(r, "test", "accuracy"),
             r["run_id"],
         ]
         for r in sorted(rows, key=lambda r: (r["method"], r["room_setting"], r["variant"]))
     ]
-    return _grid(["method", "room", "variant", "val F1", "test F1", "test acc", "run_id"], body)
+    header = ["method", "room", "variant", "val F1", "test F1", "test F1 95%", "test acc"]
+    return _grid([*header, "run_id"], body)
 
 
 def _stability(rows: list[dict], root: Path) -> list[str]:
@@ -241,10 +286,11 @@ def report(
     all_variants: bool = False,
     include_dirty: bool = False,
     reference_path: str | Path = DEFAULT_REFERENCE,
+    split_root: str | Path = "splits",
 ) -> int:
     root = Path(root)
     try:
-        rows = refresh_index(root)
+        rows = refresh_index(root, split_root)
     except OSError as e:
         sys.stderr.write(f"error: cannot write index: {e}\n")
         return 2
@@ -256,26 +302,90 @@ def report(
         and r["val_macro_f1_mean"] is not None
         and (include_dirty or not r["dirty"])
     ]
-    comparison = [r for r in usable if r["role"] == "comparison"]
-    reference = [r for r in usable if r["role"] == "reference"]
-    out: list[str] = []
+    legacy = find_legacy_dirs(root)
+    if legacy:
+        sys.stderr.write(
+            f"note: {len(legacy)} run directories are in the old layout and not reported; "
+            f"run `csi-bench migrate-runs --runs {root}`\n"
+        )
+    missing = sum(1 for r in usable if r["test_macro_f1_lo"] is None)
+    if missing:
+        sys.stderr.write(
+            f"note: {missing} runs have no confidence intervals; "
+            f"run `csi-bench migrate-runs --runs {root}` to fill them from saved predictions "
+            "(runs whose predictions are missing stay without)\n"
+        )
+    sections: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for r in usable:
+        sections[r["dataset"], r["splitter"]].append(r)
     try:
-        hashes = sorted({r["split_hash"] for r in comparison})
-        if len(hashes) > 1:
-            raise ConfigError(
-                f"runs use different split hashes ({', '.join(hashes)}); "
-                "report them separately by moving the others out of runs/"
-            )
-        published = _load_reference(reference_path) if reference else None
+        for (dataset, splitter), rows_in in sections.items():
+            for role in ("comparison", "reference"):
+                by_column: dict[str, set[str]] = defaultdict(set)
+                for r in rows_in:
+                    if r["role"] == role:
+                        by_column[r["room_setting"]].add(r["split_hash"])
+                for column, hashes in sorted(by_column.items()):
+                    if len(hashes) > 1:
+                        raise ConfigError(
+                            f"{dataset} / {splitter}: {role} runs in column {column} use "
+                            f"different split hashes ({', '.join(sorted(hashes))}); "
+                            "report them separately by moving the others out of the store"
+                        )
+        has_reference = any(r["role"] == "reference" for r in usable)
+        published = _load_reference(reference_path) if has_reference else None
     except ConfigError as e:
         sys.stderr.write(f"error: {e}\n")
         return 2
     if not usable:
         sys.stdout.write("no finished runs to report\n")
         return 0
+    out: list[str] = []
+    for dataset, splitter in sorted(sections):
+        heading = f"{dataset} / {splitter}"
+        out += ["", heading, "=" * len(heading), ""]
+        out += _section(sections[dataset, splitter], root, all_variants, published, splitter)
+    for dataset in sorted({d for d, _ in sections}):
+        random_side = [
+            r for r in sections.get((dataset, "random_window"), []) if r["role"] == "reference"
+        ]
+        block_side = [
+            r for r in sections.get((dataset, "time_block"), []) if r["role"] == "comparison"
+        ]
+        if not random_side or not block_side:
+            continue
+        heading = f"Leakage, {dataset} (test accuracy %, random minus time-block)"
+        out += ["", heading, ""]
+        out += _leakage(random_side, block_side, published)
+    sys.stdout.write("\n".join(out).strip("\n") + "\n")
+    return 0
+
+
+def _section(
+    rows: list[dict],
+    root: Path,
+    all_variants: bool,
+    published: dict | None,
+    splitter: str | None = None,
+) -> list[str]:
+    """The comparison and reference tables of one `(dataset, splitter)` section.
+
+    A `room_holdout` section has one column per direction present (`r1→r2`, `r2→r1`) and no
+    published row; the others have the room columns `r1`, `r2`, `mixed`.
+    """
+    holdout = splitter == ROOM_HOLDOUT
+    if holdout:
+        published = None
+
+    def columns(table: list[dict]) -> tuple[str, ...] | list[str]:
+        return sorted({r["room_setting"] for r in table}) if holdout else rs.ROOM_SETTINGS
+
+    comparison = [r for r in rows if r["role"] == "comparison"]
+    reference = [r for r in rows if r["role"] == "reference"]
+    out: list[str] = []
     if comparison:
         out += ["Comparison (test score of the best-validation variant)", ""]
-        out += _comparison(comparison, root, None)
+        out += _comparison(comparison, root, None, columns(comparison))
         if all_variants:
             out += ["", "All variants", ""] + _variants(comparison)
         stability = _stability(comparison, root)
@@ -283,10 +393,7 @@ def report(
             out += ["", "Feature-selection stability (fraction of selections)", ""] + stability
     if reference:
         out += ["", "Reference runs (not comparable to the table above)", ""]
-        out += _comparison(reference, root, published)
+        out += _comparison(reference, root, published, columns(reference))
         if all_variants:
             out += [""] + _variants(reference)
-        out += ["", "Leakage (test accuracy %, random minus time-block)", ""]
-        out += _leakage(reference, comparison, published)
-    sys.stdout.write("\n".join(out).strip("\n") + "\n")
-    return 0
+    return out[1:] if out[:1] == [""] else out

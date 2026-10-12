@@ -43,9 +43,19 @@ from csi_bench.core.errors import ConfigError, DataError, ExtractorError
 from csi_bench.core.metrics import evaluate
 from csi_bench.core.ports import ContextCache, FeatureCache
 from csi_bench.core.preprocess import run_chain
-from csi_bench.core.splitplan import PARTS, check_split_role, find_split, load_split_plan
+from csi_bench.core.splitplan import (
+    PARTS,
+    ROOM_HOLDOUT,
+    check_split_role,
+    check_split_rooms,
+    find_split,
+    load_split_plan,
+    read_plan_params,
+    read_plan_splitter,
+)
 from csi_bench.core.windows import build_windows
 from csi_bench.runner.discover import discover
+from csi_bench.runner.intervals import run_intervals
 
 PACKAGES = ("numpy", "scikit-learn", "pandas", "pyarrow", "pydantic", "PyYAML", "torch")
 DEVICE = "cpu"
@@ -557,6 +567,17 @@ def _run_seed(
     return metrics, names, selection
 
 
+def _direction(config: ExperimentConfig, splitter: str) -> str | None:
+    """`r1→r2` for a `room_holdout` run (read from its plan), else None."""
+    if splitter != ROOM_HOLDOUT:
+        return None
+    try:
+        params = read_plan_params(find_split(config.dataset, config.split))
+        return rs.room_direction(params["train_rooms"], params["test_rooms"])
+    except (DataError, KeyError, TypeError):
+        return None
+
+
 def _execute(
     config: ExperimentConfig,
     config_path: str | Path,
@@ -570,7 +591,22 @@ def _execute(
     todo = [seed for seed in config.seeds if seed not in previous]
     if not todo:
         return
-    directory = rs.run_dir(run_id, root)
+    try:
+        directory: Path | None = rs.run_dir(run_id, root)
+    except FileNotFoundError:
+        directory = None
+    if directory is None or rs.parse_run_dir(directory, root)[1] == rs.UNKNOWN:
+        try:
+            splitter = read_plan_splitter(find_split(config.dataset, config.split))
+        except DataError:
+            splitter = rs.UNKNOWN  # the real error is raised and logged below, in the run dir
+        slug = rs.run_slug(config.model_dump(mode="json"), _direction(config, splitter))
+        target = rs.new_run_dir(root, config.dataset, splitter, slug, run_id)
+        if directory is None:
+            directory = target
+        elif splitter != rs.UNKNOWN:  # the plan resolves now: leave the `unknown` section
+            target.parent.mkdir(parents=True, exist_ok=True)
+            directory = directory.rename(target)
     directory.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     started_at = _now()
@@ -594,6 +630,7 @@ def _execute(
         log.info("stage load: %.2fs", time.monotonic() - stage)
         plan = load_split_plan(find_split(config.dataset, config.split), recordings)
         check_split_role(plan.unit, config.role)
+        check_split_rooms(plan.splitter, plan.params, config.selection.rooms, config.role)
         class_names = tuple(source.classes)
 
         known_rooms = {r.room for r in recordings}
@@ -678,9 +715,11 @@ def _execute(
             for seed in config.seeds
         }
 
-        _write_json(
-            rs.metrics_path(run_id, root), rs.metrics_document(per_seed, seed_names, seed_selection)
-        )
+        document = rs.metrics_document(per_seed, seed_names, seed_selection)
+        stage = time.monotonic()
+        document["intervals"] = {"test": run_intervals(run_id, config.seeds, class_names, root)}
+        log.info("stage test intervals: %.2fs", time.monotonic() - stage)
+        _write_json(rs.metrics_path(run_id, root), document)
         _write_json(
             rs.provenance_path(run_id, root),
             collect_provenance(
@@ -800,7 +839,13 @@ def run_sweep(
     failed: list[str] = []
     skipped = 0
     for run_id, config in planned:
-        action = "rerun" if force else _sweep_action(config, run_id, root)
+        try:
+            action = "rerun" if force else _sweep_action(config, run_id, root)
+        except DataError as e:  # e.g. the run_id has several directories
+            sys.stderr.write(f"error: {run_id}: {e}\n")
+            sys.stdout.write(f"{run_id} failed\n")
+            failed.append(run_id)
+            continue
         if action == "skip":
             skipped += 1
             sys.stdout.write(f"{run_id} skipped\n")

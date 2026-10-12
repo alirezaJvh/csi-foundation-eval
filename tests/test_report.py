@@ -29,9 +29,19 @@ def _config(rooms, head="svm", extractor="amplitude_stats", fs=None, window=40, 
 
 
 def _make_run(
-    root, run_id, config, val, test, split_hash="h1", dirty=False, status="done", names=None
+    root,
+    run_id,
+    config,
+    val,
+    test,
+    split_hash="h1",
+    dirty=False,
+    status="done",
+    names=None,
+    splitter="time_block",
+    intervals=None,
 ):
-    d = rs.run_dir(run_id, root)
+    d = rs.new_run_dir(root, config["dataset"], splitter, rs.run_slug(config), run_id)
     d.mkdir(parents=True)
     rs.config_path(run_id, root).write_text(yaml.safe_dump(config))
     rs.status_path(run_id, root).write_text(json.dumps({"status": status}))
@@ -49,6 +59,7 @@ def _make_run(
                     "val": {"macro_f1": [val, 0.01], "accuracy": [val, 0.01]},
                     "test": {"macro_f1": [test, 0.02], "accuracy": [test + 0.01, 0.02]},
                 },
+                **({"intervals": {"test": intervals}} if intervals else {}),
             }
         )
     )
@@ -89,9 +100,10 @@ def test_table_picks_best_val_variant_and_refreshes_index(runs, capsys):
     code, out, _ = _report(runs, capsys)
     assert code == 0
     # bbb has the best val F1 for r1, so its test score (60.00) is shown, not aaa's (70.00)
-    assert "F1 60.00±2.00 acc 61.00±2.00" in out
+    assert "F1 60.00 [-] acc 61.00 [-]" in out
     assert "70.00" not in out
-    assert f"csi-bench run {runs}/bbb/config.yaml" in out
+    assert f"csi-bench run {rs.config_path('bbb', runs)}" in out
+    assert f"{runs}/tor_vergata/time_block/amplitude_stats-none-svm-r1-w40--bbb/" in out
     index = pd.read_parquet(rs.index_path(runs))
     assert set(index.run_id) == {"aaa", "bbb", "ccc", "ddd", "eee"}
     assert set(index.room_setting) == {"r1", "r2", "mixed"}
@@ -115,7 +127,64 @@ def test_mixed_split_hashes_refused(runs, capsys):
     code, out, err = _report(runs, capsys)
     assert code == 2
     assert "h1" in err and "h2" in err
+    assert "tor_vergata / time_block" in err and "column r1" in err
     assert out == ""
+
+
+def test_different_hashes_in_other_columns_or_sections_are_fine(runs, capsys):
+    # one r1 run on another time_block plan would clash; a different column or section does not
+    for run_id in ("ddd", "eee"):  # the whole r2 column moves to another plan
+        rs.provenance_path(run_id, runs).write_text(
+            json.dumps({"split_hash": "h3", "git": {"dirty": False}})
+        )
+    _make_run(
+        runs,
+        "fff",
+        _config(["r1"], head="knn"),
+        0.5,
+        0.5,
+        split_hash="h2",
+        splitter="random_window",
+    )
+    code, out, _ = _report(runs, capsys)
+    assert code == 0
+    assert "tor_vergata / random_window" in out and "tor_vergata / time_block" in out
+
+
+def test_one_section_per_dataset_and_splitter(runs, capsys):
+    ref = _config(["r1"], head="logreg", role="reference")
+    _make_run(runs, "rrr", ref, 0.9, 0.95, split_hash="random", splitter="random_window")
+    code, out, _ = _report(
+        runs, capsys, "--reference", str(ROOT / "experiments/published_reference.yaml")
+    )
+    assert code == 0
+    random_at = out.index("tor_vergata / random_window")
+    block_at = out.index("tor_vergata / time_block")
+    leak_at = out.index("Leakage")
+    assert random_at < block_at < leak_at
+    random_part = out[random_at:block_at]
+    assert "logreg" in random_part and "svm" not in random_part
+    assert "logreg" not in out[block_at:leak_at]
+    index = pd.read_parquet(rs.index_path(runs))
+    assert dict(zip(index.run_id, index.splitter, strict=True))["rrr"] == "random_window"
+    assert set(index.splitter) == {"random_window", "time_block"}
+
+
+def test_unknown_splitter_runs_get_a_section(runs, capsys):
+    _make_run(
+        runs, "uuu", _config(["r1"], head="knn"), 0.5, 0.5, split_hash="h9", splitter="unknown"
+    )
+    code, out, _ = _report(runs, capsys)
+    assert code == 0 and "tor_vergata / unknown" in out
+
+
+def test_legacy_dirs_noted_on_stderr(runs, capsys):
+    legacy = runs / "0123456789ab"
+    legacy.mkdir()
+    (legacy / "config.yaml").write_text(yaml.safe_dump(_config(["r1"])))
+    code, out, err = _report(runs, capsys)
+    assert code == 0 and "F1 60.00 [-]" in out
+    assert "old layout" in err and "csi-bench migrate-runs" in err
 
 
 def test_dirty_runs_excluded_unless_included(runs, capsys):
@@ -185,7 +254,7 @@ def test_malformed_runs_do_not_abort_report(runs, capsys):
     _make_run(runs, "bad3", _config(["r1"]), 0.9, 0.9)
     rs.status_path("bad3", runs).write_text("[]")
     code, out, _ = _report(runs, capsys)
-    assert code == 0 and "F1 60.00±2.00" in out
+    assert code == 0 and "F1 60.00 [-]" in out
 
 
 def test_notebooks_import_only_results_api():
@@ -220,11 +289,10 @@ def _leakage_lines(runs, capsys):
     return leak.splitlines()
 
 
-def test_leakage_block_random_minus_time_block(runs, capsys, monkeypatch):
+def test_leakage_block_random_minus_time_block(runs, capsys):
     # r1 has both sides; the mrmr method (r2) only the comparison side
-    monkeypatch.chdir(ROOT)
     ref = _config(["r1"], role="reference")
-    _make_run(runs, "r_r1", ref, 0.9, 0.98, split_hash=WINDOW_PLAN)
+    _make_run(runs, "r_r1", ref, 0.9, 0.98, split_hash=WINDOW_PLAN, splitter="random_window")
     leak = _leakage_lines(runs, capsys)
     assert any("random split" in line and "time-block split" in line for line in leak)
     r1 = next(line for line in leak if line.split()[:1] == ["amplitude_stats"] and " r1 " in line)
@@ -235,12 +303,139 @@ def test_leakage_block_random_minus_time_block(runs, capsys, monkeypatch):
     assert r2.split()[-4:] == ["-", "51.00", "-", "-"]
 
 
-def test_leakage_ignores_reference_runs_off_a_window_plan(runs, capsys, monkeypatch):
-    monkeypatch.chdir(ROOT)
+def test_leakage_ignores_reference_runs_off_the_random_window_section(runs, capsys):
     ref = _config(["r1"], role="reference")
     _make_run(runs, "r_block", ref, 0.9, 0.98, split_hash=BLOCK_PLAN)
-    _make_run(runs, "r_unknown", _config(["r2"], role="reference"), 0.9, 0.98, split_hash="nope")
+    _make_run(runs, "r_unknown", _config(["r2"], role="reference"), 0.9, 0.98, splitter="unknown")
+    mixed = _config(["r1", "r2"], role="reference")
+    _make_run(runs, "r_mix", mixed, 0.9, 0.97, split_hash=WINDOW_PLAN, splitter="random_window")
     leak = _leakage_lines(runs, capsys)
     r1 = next(line for line in leak if line.split()[:1] == ["amplitude_stats"] and " r1 " in line)
     assert r1.split()[-4:] == ["-", "61.00", "-", "-"]
+    r2 = next(line for line in leak if line.split()[:1] == ["amplitude_stats"] and " r2 " in line)
+    assert r2.split()[-4:] == ["-", "51.00", "-", "-"]
     assert not any("99.00" in line for line in leak)
+
+
+def test_no_leakage_block_without_both_sections(runs, capsys):
+    _make_run(runs, "r_block", _config(["r1"], role="reference"), 0.9, 0.98, split_hash="h1")
+    code, out, _ = _report(
+        runs, capsys, "--reference", str(ROOT / "experiments/published_reference.yaml")
+    )
+    assert code == 0 and "Reference runs" in out and "Leakage" not in out
+
+
+def test_no_leakage_block_when_time_block_has_no_comparison_runs(tmp_path, capsys):
+    root = tmp_path / "runs"
+    ref = _config(["r1"], role="reference")
+    _make_run(root, "r_win", ref, 0.9, 0.98, split_hash=WINDOW_PLAN, splitter="random_window")
+    _make_run(root, "r_blk", _config(["r2"], role="reference"), 0.9, 0.97, split_hash=BLOCK_PLAN)
+    code, out, _ = _report(
+        root, capsys, "--reference", str(ROOT / "experiments/published_reference.yaml")
+    )
+    assert code == 0 and "tor_vergata / time_block" in out and "Leakage" not in out
+
+
+def _holdout_plans(split_root):
+    folder = split_root / "tor_vergata"
+    folder.mkdir(parents=True)
+    for name, train, test in (("h12", "r1", "r2"), ("h21", "r2", "r1")):
+        params = {"train_rooms": [train], "test_rooms": [test]}
+        plan = {"splitter": "room_holdout", "params": params}
+        (folder / f"{name}.json").write_text(json.dumps(plan))
+
+
+def test_room_holdout_section_has_direction_columns(runs, tmp_path, capsys):
+    from csi_bench.runner.report import report
+
+    split_root = tmp_path / "splits"
+    _holdout_plans(split_root)
+    for run_id, split, head, test in (("x12", "h12", "svm", 0.41), ("x21", "h21", "knn", 0.42)):
+        config = {**_config(["r1", "r2"], head=head), "split": split}
+        _make_run(runs, run_id, config, 0.9, test, split_hash=split, splitter="room_holdout")
+    # `run` refuses reference runs on a holdout plan; one stored anyway still gets its own columns
+    ref = {**_config(["r1", "r2"], head="logreg", role="reference"), "split": "h21"}
+    _make_run(runs, "x99", ref, 0.9, 0.43, split_hash="h21", splitter="room_holdout")
+    reference = ROOT / "experiments/published_reference.yaml"
+    assert report(runs, reference_path=reference, split_root=split_root) == 0
+    out = capsys.readouterr().out
+    holdout = out[out.index("tor_vergata / room_holdout") : out.index("tor_vergata / time_block")]
+    headers = [line.split() for line in holdout.splitlines() if line.startswith("method")]
+    assert headers == [["method", "r1→r2", "r2→r1"], ["method", "r2→r1"]]
+    assert "F1 41.00 [-]" in holdout and "F1 42.00 [-]" in holdout
+    assert "published" not in holdout and "99.41" not in holdout
+    index = pd.read_parquet(rs.index_path(runs))
+    columns = dict(zip(index.run_id, index.room_setting, strict=True))
+    assert (columns["x12"], columns["x21"], columns["aaa"]) == ("r1→r2", "r2→r1", "r1")
+
+
+def test_room_holdout_hash_check_is_per_direction(runs, tmp_path, capsys):
+    from csi_bench.runner.report import report
+
+    split_root = tmp_path / "splits"
+    _holdout_plans(split_root)
+    planned = (("x12", "h12", "svm"), ("y12", "h12", "knn"), ("x21", "h21", "svm"))
+    for run_id, split, head in planned:
+        config = {**_config(["r1", "r2"], head=head), "split": split}
+        hashed = "other" if run_id == "y12" else split
+        _make_run(runs, run_id, config, 0.9, 0.5, split_hash=hashed, splitter="room_holdout")
+    assert report(runs, split_root=split_root) == 2
+    err = capsys.readouterr().err
+    assert "column r1→r2" in err and "r2→r1" not in err
+
+
+def test_room_holdout_without_plan_falls_back_to_rooms(runs, tmp_path, capsys):
+    from csi_bench.runner.report import refresh_index
+
+    config = {**_config(["r1", "r2"]), "split": "gone"}
+    _make_run(runs, "x12", config, 0.9, 0.5, split_hash="gone", splitter="room_holdout")
+    rows = refresh_index(runs, tmp_path / "nosplits")
+    assert {r["run_id"]: r["room_setting"] for r in rows}["x12"] == "mixed"
+
+
+INTERVALS = {
+    "accuracy": [0.6012, 0.6234],
+    "macro_f1": [0.5871, 0.6129],
+    "n_resamples": 1000,
+    "seed": 0,
+    "level": 0.95,
+    "unit": "recording",
+    "single_recording_classes": [],
+}
+
+
+def test_cell_shows_intervals_and_index_has_bounds(runs, capsys):
+    path = rs.metrics_path("bbb", runs)
+    path.write_text(json.dumps({**json.loads(path.read_text()), "intervals": {"test": INTERVALS}}))
+    code, out, err = _report(runs, capsys, "--all-variants")
+    assert code == 0
+    assert "F1 60.00 [58.71, 61.29] acc 61.00 [60.12, 62.34]" in out
+    assert "F1 60.00 [58.71, 61.29] acc 61.00 [60.12, 62.34] *" not in out
+    assert "60.00±2.00  [58.71, 61.29]  61.00±2.00" in out  # all-variants keeps the seed std
+    assert "test F1 95%" in out
+    assert "note: 4 runs have no confidence intervals" in err and "migrate-runs" in err
+    index = pd.read_parquet(rs.index_path(runs)).set_index("run_id")
+    assert index.loc["bbb", "test_macro_f1_lo"] == 0.5871
+    assert index.loc["bbb", "test_accuracy_hi"] == 0.6234
+    assert index.loc["bbb", "single_recording_classes"] == ""
+    assert pd.isna(index.loc["aaa", "test_macro_f1_lo"])
+    assert pd.isna(index.loc["aaa", "single_recording_classes"])
+
+
+def test_single_recording_class_flags_cell_with_footnote(runs, capsys):
+    flagged = {**INTERVALS, "single_recording_classes": ["empty", "sitting"]}
+    _make_run(runs, "x01", _config(["r1"], head="knn"), 0.9, 0.9, intervals=flagged)
+    code, out, err = _report(runs, capsys)
+    assert code == 0
+    assert "acc 91.00 [60.12, 62.34] *" in out
+    assert "* r1 / amplitude_stats | none | knn: single test recording for empty, sitting" in out
+    assert out.count("single test recording") == 1
+    index = pd.read_parquet(rs.index_path(runs)).set_index("run_id")
+    assert index.loc["x01", "single_recording_classes"] == "empty,sitting"
+
+
+def test_no_interval_note_when_every_run_has_intervals(tmp_path, capsys):
+    root = tmp_path / "runs"
+    _make_run(root, "y01", _config(["r1"]), 0.9, 0.8, intervals=INTERVALS)
+    code, out, err = _report(root, capsys)
+    assert code == 0 and "[-]" not in out and "confidence intervals" not in err

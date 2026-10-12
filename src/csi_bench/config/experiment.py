@@ -16,7 +16,14 @@ from csi_bench.config.presets import PREPROCESS_PRESETS
 from csi_bench.core import registry
 from csi_bench.core.errors import ConfigError, DataError
 from csi_bench.core.hashing import sha256_hex, short_hash
-from csi_bench.core.splitplan import check_split_role, find_split, read_plan_unit
+from csi_bench.core.splitplan import (
+    check_split_role,
+    check_split_rooms,
+    find_split,
+    read_plan_params,
+    read_plan_splitter,
+    read_plan_unit,
+)
 
 
 class Selection(BaseModel):
@@ -155,11 +162,20 @@ def _check_adapter(stage: str, spec: AdapterSpec, path: str) -> Any:
 def validate_registry(config: ExperimentConfig) -> None:
     """Check adapter names and their params against the (already discovered) registry."""
     _check_adapter("dataset", AdapterSpec(name=config.dataset), "dataset")
+    # no usable plan yet: `run` checks again once it loads one
     try:
-        unit = read_plan_unit(find_split(config.dataset, config.split))
+        plan_path = find_split(config.dataset, config.split)
+        unit = read_plan_unit(plan_path)
     except DataError:
-        unit = "block"  # no usable plan yet: `run` checks again once it loads one
+        plan_path, unit = None, "block"
     check_split_role(unit, config.role)
+    if plan_path is not None:
+        try:
+            splitter, params = read_plan_splitter(plan_path), read_plan_params(plan_path)
+        except DataError:
+            splitter, params = None, {}
+        if splitter is not None:
+            check_split_rooms(splitter, params, config.selection.rooms, config.role)
     for i, spec in enumerate(config.preprocessing):
         _check_adapter("preprocess", spec, f"preprocessing.{i}")
         if spec.params.get("fit_scope") == "whole_recording" and config.role != "reference":

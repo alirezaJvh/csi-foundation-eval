@@ -4,6 +4,7 @@ import pytest
 import yaml
 
 from csi_bench.config.sweep import _set_path, expand_sweep
+from csi_bench.core import results_schema as rs
 from csi_bench.core.errors import ConfigError
 from csi_bench.runner import run as run_module
 from csi_bench.runner.cli import main
@@ -289,3 +290,31 @@ def test_find_split_ignores_window_plans_unless_named(tmp_path):
     (folder / "ccc.json").write_text('{"unit": "block"}')
     with pytest.raises(DataError, match="several split plans"):
         find_split("ds", None, tmp_path)
+
+
+def test_resume_in_place_after_seed_added(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert main(["sweep", _write(tmp_path, {"window_len": [40]})]) == 0
+    (first,) = _run_dirs(tmp_path)
+    # seeds are not part of the run id: adding one resumes the same directory
+    assert main(["sweep", _write(tmp_path, {"window_len": [40]}, seeds=[0, 1])]) == 0
+    assert _run_dirs(tmp_path) == [first]
+    assert (first / "seeds" / "1" / "predictions.parquet").is_file()
+
+
+def test_run_with_several_dirs_fails_and_sweep_continues(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    path = _write(tmp_path, {"window_len": [30, 40]})
+    assert main(["sweep", path]) == 0
+    first, second = _run_dirs(tmp_path)
+    run_id = rs.parse_run_dir(first, tmp_path / "runs")[2]
+    rs.new_run_dir(tmp_path / "runs", "tor_vergata", "random_window", "copy", run_id).mkdir(
+        parents=True
+    )
+    capsys.readouterr()
+    assert main(["sweep", path]) == 1
+    cap = capsys.readouterr()
+    assert f"{run_id} failed" in cap.out and "several directories" in cap.err
+    assert f"{rs.parse_run_dir(second, tmp_path / 'runs')[2]} skipped" in cap.out
