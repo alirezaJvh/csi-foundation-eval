@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from csi_bench.config.experiment import compute_run_id
 from csi_bench.config.sweep import _set_path, expand_sweep
 from csi_bench.core import results_schema as rs
 from csi_bench.core.errors import ConfigError
@@ -318,3 +319,67 @@ def test_run_with_several_dirs_fails_and_sweep_continues(tmp_path, monkeypatch, 
     cap = capsys.readouterr()
     assert f"{run_id} failed" in cap.out and "several directories" in cap.err
     assert f"{rs.parse_run_dir(second, tmp_path / 'runs')[2]} skipped" in cap.out
+
+
+def test_list_sweep_is_union_in_item_order(tmp_path, monkeypatch):
+    project = _make_project(tmp_path)
+    sweep = [{"window_len": [10, 30]}, {"head.name": ["knn"], "window_len": [30]}]
+    out = _expand(project, sweep, monkeypatch)
+    got = [(c.window_len, c.head.name) for _, c in out]
+    assert got == [(10, CONFIG["head"]["name"]), (30, CONFIG["head"]["name"]), (30, "knn")]
+
+
+def test_list_sweep_dedups_across_items(tmp_path, monkeypatch):
+    project = _make_project(tmp_path)
+    sweep = [{"window_len": [10, 30]}, {"window_len": [30, 40]}]
+    out = _expand(project, sweep, monkeypatch)
+    assert [c.window_len for _, c in out] == [10, 30, 40]
+
+
+def test_mapping_sweep_matches_single_item_list(tmp_path, monkeypatch):
+    project = _make_project(tmp_path)
+    sweep = {"window_len": [10, 30], "head.name": ["svm", "knn"]}
+    as_map = _expand(project, sweep, monkeypatch)
+    as_list = _expand(project, [sweep], monkeypatch)
+    assert [compute_run_id(c) for _, c in as_map] == [compute_run_id(c) for _, c in as_list]
+
+
+@pytest.mark.parametrize(
+    ("sweep", "match"),
+    [
+        ([{"window_len": [10]}, 5], r"sweep\.1"),
+        ([], "sweep must be"),
+        ([{"window_len": [10]}, {"window_len": []}], r"sweep\.1\.window_len"),
+        ([{"extractors.5.name": ["x"]}], r"sweep\.0\.extractors\.5: "),
+    ],
+)
+def test_bad_list_sweep_names_item(tmp_path, monkeypatch, sweep, match):
+    project = _make_project(tmp_path)
+    with pytest.raises(ConfigError, match=match):
+        _expand(project, sweep, monkeypatch)
+
+
+def test_mapping_sweep_error_text_unchanged(tmp_path, monkeypatch):
+    project = _make_project(tmp_path)
+    with pytest.raises(ConfigError, match=r"test: sweep\.window_len: expected a non-empty"):
+        _expand(project, {"window_len": []}, monkeypatch)
+
+
+def test_cross_room_sweep_expands(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    raw = yaml.safe_load((ROOT / "experiments/classical_cross_room.yaml").read_text())
+    configs = [c for _, c in expand_sweep(raw, "classical_cross_room")]
+    assert len({compute_run_id(c) for c in configs}) == len(configs) == 146
+    by_split = {s: [c for c in configs if c.split == s] for s in ("1e8688472a1f", "c4faaf799ad5")}
+    assert [len(v) for v in by_split.values()] == [73, 73]
+    for c in configs:
+        assert c.selection.rooms == ["r1", "r2"]
+        assert (c.role, c.seeds) == ("comparison", [0])
+        assert [(s.name, s.params) for s in c.preprocessing] == [("antennas", {"ids": [0, 1]})]
+    paper = [c for c in configs if c.window_len == 56]
+    assert len(paper) == 2
+    for c in paper:
+        assert [e.name for e in c.extractors] == ["paper_beamforming"]
+        assert (c.head.name, c.stride, c.feature_selection) == ("random_forest", 1, None)
+    assert {c.window_len for c in configs if c.window_len != 56} == {20, 30, 40, 50}

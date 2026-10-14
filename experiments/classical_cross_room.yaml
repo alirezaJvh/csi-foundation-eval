@@ -1,0 +1,38 @@
+# Cross-room classical baseline (strict OOD): train on one room, test on the other, under both
+# committed room_holdout plans (1e8688472a1f = train r1 / test r2, c4faaf799ad5 = train r2 /
+# test r1). Validation uses the train room only; nothing is fitted on or selected with the
+# test room, so there is no oracle-selection row.
+# `sweep:` is a list: items are expanded against the same base and unioned (deduped by run id).
+#   item 0: the classical_baseline grid (4 windows x 3 feature sets x 2 selection x 3 heads)
+#           x 2 directions = 144 runs.
+#   item 1: the paper method (paper_beamforming + random forest, window_len 56, all six
+#           features) x 2 directions = 2 runs. No recording_mean_norm: it cannot be fitted on
+#           test-room recordings under strict OOD.
+# Total 146 runs. selection.rooms must equal train_rooms + test_rooms for room_holdout.
+dataset: tor_vergata
+selection: {rooms: [r1, r2]}
+split: "1e8688472a1f"
+preprocessing: [ant2]
+window_len: 40
+stride: 1
+extractors: [{name: amplitude_stats}]
+feature_selection: null
+head: {name: svm}
+seeds: [0]
+role: comparison
+sweep:
+  - window_len: [20, 30, 40, 50]
+    extractors:
+      - [{name: amplitude_stats}]
+      - [{name: paper_beamforming}]
+      - [{name: amplitude_stats}, {name: paper_beamforming}]
+    feature_selection:
+      - null
+      - {mrmr: {k: [2, 3]}}
+    head.name: [svm, knn, random_forest]
+    split: ["1e8688472a1f", "c4faaf799ad5"]
+  - window_len: [56]
+    extractors: [[{name: paper_beamforming}]]
+    feature_selection: [null]
+    head.name: [random_forest]
+    split: ["1e8688472a1f", "c4faaf799ad5"]
