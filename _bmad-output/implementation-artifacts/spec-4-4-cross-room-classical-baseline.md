@@ -62,6 +62,27 @@ context:
 - Given the sweep finished, when it is run again, then no run is re-executed (all skipped as done).
 - Given the 222 pre-existing runs, when the sweep finishes, then their `run_id`s and metrics are unchanged.
 
+### Review Findings
+
+- [x] [Review][Decision] (resolved 2026-10-14: accepted — numbers stay recorded in Implementation Notes, no code change) Paper-method OOD number is not visible in the report — The w56 runs share method key `paper_beamforming | none | random_forest` with the grid; best-validation picks w20 in both directions, so the paper method's 37.2 / 38.8 test macro-F1 appears in no report cell, only in the index and these notes. The Intent is an OOD comparison point for LWM, but the Never rule forbids editing `report`/`results_api`. Options: accept and footnote; give the paper runs a distinguishable method/variant; defer to Epic 5.
+- [x] [Review][Patch] List-form error prefixes only pinned for 3 of ~10 rewritten sites; mapping-form text pinned for 1 (overlap `is also set by`, paired-axis entry, seeds, malformed path untested) [tests/test_sweep.py:398]
+- [x] [Review][Patch] `test_cross_room_sweep_expands` doesn't check the grid's extractor sets, feature_selection options or heads, so drift from `classical_baseline.yaml` keeping 146 runs passes [tests/test_sweep.py:410]
+- [x] [Review][Patch] Top-level error still says "sweep must be a mapping of dotted paths to value lists" although a non-empty list of mappings is now accepted [src/csi_bench/config/sweep.py:93]
+
+Rejected:
+- `false` compute_run_id raises unprefixed for an unknown split — `validate_registry` calls `find_split` (experiment.py:167) inside `config_from_dict`, so the error is already wrapped with overrides.
+- `false` Empty list item `{}` silently adds the base config — same semantics as mapping-form `sweep: {}`; the spec defines each item as an ordinary sweep mapping.
+- `false` Private helpers default `prefix="sweep"` → wrong index — every internal call site passes `prefix`.
+- `false` Cross-item dedup drops configs silently — spec mandates "kept once".
+- `false` AC1/AC2/AC3 unverified — store has 368 rows (222 + 146), all 146 `done` and `dirty=False`; `report --runs runs` renders the room_holdout section with intervals.
+- `low` `config_from_dict` errors in list form don't name `sweep.<i>` — overrides already identify the combo; tagging would change mapping-form text.
+- `low` Same claim ("errors name the item") — as above; axis-validation and `_set_path` errors do carry the index.
+- `low` `_set_path` product-step errors lack the `{source}:` prefix — pre-existing, cosmetic.
+- `low` No user docs for list-form `sweep:` — no sweep syntax doc exists at all; docstring and yaml header cover it.
+- `spec-edit` Wide r2→r1 interval unexplained — fix is a note in the spec.
+- `spec-edit` Frontmatter `status: done` vs sprint `review`; stale notes ("dirty: true", "nothing committed", "code review skipped") — fix edits the spec.
+- `not-code` HEAD commit carries a Claude trailer despite the Never "Run git add/commit" rule — process matter, no code patch.
+
 ## Implementation Notes
 
 - 2026-10-14: sweep ran on an uncommitted tree, so all 146 runs carry `dirty: true` and `report --runs runs` hides them; the `room_holdout` section appears with `--include-dirty`. After the code is committed, re-running the sweep re-executes the dirty runs once (dirty-rerun rule) and they then show without the flag.

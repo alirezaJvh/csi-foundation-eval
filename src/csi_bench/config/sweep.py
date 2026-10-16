@@ -90,7 +90,10 @@ def expand_sweep(raw: Any, source: str = "sweep") -> list[tuple[dict[str, Any], 
                 raise ConfigError(f"{source}: sweep.{i}: expected a mapping of dotted paths")
             items.append((f"sweep.{i}", item))
     else:
-        raise ConfigError(f"{source}: sweep must be a mapping of dotted paths to value lists")
+        raise ConfigError(
+            f"{source}: sweep must be a mapping of dotted paths to value lists,"
+            " or a non-empty list of such mappings"
+        )
     out: list[tuple[dict[str, Any], ExperimentConfig]] = []
     seen: set[str] = set()
     for prefix, item in items:

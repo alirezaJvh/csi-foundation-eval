@@ -351,6 +351,13 @@ def test_mapping_sweep_matches_single_item_list(tmp_path, monkeypatch):
         ([], "sweep must be"),
         ([{"window_len": [10]}, {"window_len": []}], r"sweep\.1\.window_len"),
         ([{"extractors.5.name": ["x"]}], r"sweep\.0\.extractors\.5: "),
+        (
+            [{"window_len": [10]}, {"window_len": [10], "@a": [{"window_len": 20}]}],
+            r"sweep\.1\.@a: window_len is also set by sweep\.1\.window_len",
+        ),
+        ([{"@a": [{"window_len": 10}, {}]}], r"sweep\.0\.@a\.1: expected a non-empty mapping"),
+        ([{"window_len": [10]}, {"seeds": [[1]]}], r"sweep\.1\.seeds: seeds cannot be swept"),
+        ([{"window..len": [10]}], r"sweep\.0\.window\.\.len: malformed dotted path"),
     ],
 )
 def test_bad_list_sweep_names_item(tmp_path, monkeypatch, sweep, match):
@@ -359,16 +366,30 @@ def test_bad_list_sweep_names_item(tmp_path, monkeypatch, sweep, match):
         _expand(project, sweep, monkeypatch)
 
 
-def test_mapping_sweep_error_text_unchanged(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("sweep", "match"),
+    [
+        ({"window_len": []}, r"test: sweep\.window_len: expected a non-empty"),
+        (
+            {"window_len": [10], "@a": [{"window_len": 20}]},
+            r"test: sweep\.@a: window_len is also set by sweep\.window_len",
+        ),
+        ({"seeds": [[1]]}, r"test: sweep\.seeds: seeds cannot be swept"),
+    ],
+)
+def test_mapping_sweep_error_text_unchanged(tmp_path, monkeypatch, sweep, match):
     project = _make_project(tmp_path)
-    with pytest.raises(ConfigError, match=r"test: sweep\.window_len: expected a non-empty"):
-        _expand(project, {"window_len": []}, monkeypatch)
+    with pytest.raises(ConfigError, match=match):
+        _expand(project, sweep, monkeypatch)
 
 
 def test_cross_room_sweep_expands(monkeypatch):
     monkeypatch.chdir(ROOT)
     discover()
     raw = yaml.safe_load((ROOT / "experiments/classical_cross_room.yaml").read_text())
+    baseline = yaml.safe_load((ROOT / "experiments/classical_baseline.yaml").read_text())
+    grid = {k: v for k, v in raw["sweep"][0].items() if k != "split"}
+    assert grid == {k: v for k, v in baseline["sweep"].items() if k != "selection.rooms"}
     configs = [c for _, c in expand_sweep(raw, "classical_cross_room")]
     assert len({compute_run_id(c) for c in configs}) == len(configs) == 146
     by_split = {s: [c for c in configs if c.split == s] for s in ("1e8688472a1f", "c4faaf799ad5")}
