@@ -72,6 +72,37 @@ context:
 - Given `lwm.yaml` runs (or a subset of them), when `csi-bench report` runs, then LWM rows appear in the `time_block` section and in the `room_holdout` section with intervals.
 - Given the whole suite, when `pytest`, `ruff`, `ruff format --check` and `lint-imports` run, then they pass, and `ty` reports no new errors in the touched files.
 
+### Review Findings
+
+Code review 2026-10-18. Layers: Blind Hunter, Edge Case Hunter, Verification Gap, Acceptance Auditor. 4 patch, 1 defer, 19 rejected.
+
+- [x] [Review][Patch] (medium) No test checks the pooled values against their windows. The runner tests check names, cache flags, stats and cold-vs-warm equality, but none asserts that row j of the per-packet matrix equals mean/std of `extract_packets(rec.csi)[w.start : w.start + window_len]`. A wrong scatter (`values[indices]`), wrong starts or `stride` passed for `window_len` would keep the suite green. Add a `fake_packets` test over ≥2 recordings with `mean_std` that compares `_extract`'s output with naive numpy. [tests/test_run.py:1463, src/csi_bench/runner/run.py:485]
+- [x] [Review][Patch] (low) `test_real_lwm_end_to_end` has no skip guard. It symlinks `ROOT/.cache/weights` unconditionally. Run on its own on a fresh clone (`pytest tests/test_run.py`), the link dangles and the test fails instead of skipping. Add `skipif(not (ROOT / ".cache/weights").is_dir())`, as the real-data test at `:202` does. [tests/test_run.py:1528]
+- [x] [Review][Patch] (low) The `@protocol` entries in `lwm.yaml` don't say which split hash is which protocol (`e31e1b7dd9b4` time_block, `1e8688472a1f` r1→r2, `c4faaf799ad5` r2→r1). Add a trailing comment per entry, as `classical_cross_room.yaml` does. [experiments/lwm.yaml:41]
+- [x] [Review][Patch] (low) `mean_std` doesn't say that `.std` is the population std (ddof=0, so a 2-packet window gives `|x1−x2|/2`). State it in the module docstring. [src/csi_bench/adapters/poolers/mean_std.py:1]
+- [x] [Review][Defer] The row-count guard in `_pool_packets` (`gave N rows for M packets`) has no test, so deleting it, or limiting it to misses, would go unnoticed. [src/csi_bench/runner/run.py:519] — deferred: defensive guard for an invariant the key (source_sha256 + preprocessing + fitted) already protects; a small parametrised case can follow.
+
+**Rejected:**
+- `false` Parallel sweep workers embed the same key twice (Blind Hunter). `run_sweep` runs configs one at a time; `--workers` only parallelises inside a run (extraction and joblib), so two runs never race on a packet key.
+- `false` No contract that `extract_packets` treats packets independently, which would leak across split blocks (Blind Hunter). `tests/contracts/extractor.py::check_packet_extractor` asserts that one-packet calls equal the batch rows. LWM embeds each packet as its own token sequence in eval mode.
+- `false` A cache hit with the wrong row count fails forever instead of recomputing (Edge Case Hunter, Acceptance Auditor). The key covers source_sha256, the preprocessing steps and the fitted hash, which fix the packet count; only a bug can produce such an entry, and raising loudly is the documented choice.
+- `false` Non-numeric `input_stats` escapes `get()` (Edge Case Hunter). Entries are only written by `put` from a `dict[str, float]`; a corrupt file fails `np.load`/JSON inside the try.
+- `false` A non-2-D `extract_packets` output gets cached (Edge Case Hunter). The extractor contract asserts a 2-D float32 output, and `lwm` meets it.
+- `false` A missing or unknown `granularity` takes the per-window path silently (Edge Case Hunter). The `FeatureExtractor` protocol requires `granularity`, and every registered extractor declares it.
+- `false` The report variant drops pooler params and VERSION, so variants collapse (Edge Case Hunter, Blind Hunter). Both poolers have empty `extra="forbid"` Params, so no two configs differ only in them, and no other variant field carries VERSION.
+- `false` Poolers accept negative or overrunning starts (Edge Case Hunter, Blind Hunter). Starts are recording-relative window starts from `WindowSet`, and the row-count guard ties the packet rows to `rec.csi.shape[1]`.
+- `false` A zero-packet recording gives a NaN centre in `mean_std` (Edge Case Hunter). A recording with no packets has no windows, so it never reaches `_pool_packets`'s groups.
+- `false` `input_stats` is keyed only by extractor name, so two `lwm` specs overwrite each other (Blind Hunter). The stats describe the shared preprocessed input, so both specs produce identical stats; cache entries are told apart by `key`.
+- `false` The `feature_cache` provenance list mixes entry shapes (Blind Hunter). The spec prescribes exactly this per-packet shape, and no reader is named that would break.
+- `low` The packet key ignores the torch version/device, and the cache has no eviction (Blind Hunter). This matches the existing feature/context caches (CPU only, pinned threads), and the cache is about 2 GB for the full sweep.
+- `low` SIGKILL leaves `.tmp` files behind (Blind Hunter). Same as the existing npz caches; rare, harmless, and the fix adds cleanup code.
+- `low` The per-packet interface is only a comment in `ports.py` (Blind Hunter). The Code Map asks for exactly this; a typed protocol adds surface for no named harm.
+- `reject (spec edit)` `lwm.yaml` has 4500 runs vs the frozen "5000", unlogged in the Spec Change Log (Acceptance Auditor). The code is right: 5000 needs `mean_std`×w1, which the frozen matrix forbids. The fix is a spec amendment by Jj; see the Implementation Notes.
+- `reject (spec edit)` The paired `@pooling` axis replaces the separate `pooler.name`/`window_len` axes from the Code Map (Acceptance Auditor). Same root cause as the run-count finding.
+- `false` `vendor_hash`/`weights_revision` in the run_id body (Acceptance Auditor). The epic context requires it, and a golden test keeps existing ids unchanged (5.1 code).
+- `false` The header estimate differs from the frozen decision (Acceptance Auditor). "~2 days with --workers 12" sits inside "1.5–2 days"; the notes' 2.5–3 vs 3 days is a spec-text matter.
+- `false` AC2 room_holdout placement isn't tested for LWM (Acceptance Auditor). Report sections are chosen by splitter (`_room_column`), independent of extractor, and existing report tests cover room_holdout; the pooler only touches `variant`.
+
 ## Implementation Notes
 
 - 2026-10-17: implemented directly in the planning session (not by a subagent), because the context was already loaded.

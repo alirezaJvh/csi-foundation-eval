@@ -39,8 +39,8 @@ sweep:
     - {pooler: mean_std, window_len: 40}
     - {pooler: mean_std, window_len: 50}
   "@protocol":
-    - {split: "e31e1b7dd9b4", selection.rooms: [r1]}
-    - {split: "e31e1b7dd9b4", selection.rooms: [r2]}
-    - {split: "e31e1b7dd9b4", selection.rooms: [r1, r2]}
-    - {split: "1e8688472a1f", selection.rooms: [r1, r2]}
-    - {split: "c4faaf799ad5", selection.rooms: [r1, r2]}
+    - {split: "e31e1b7dd9b4", selection.rooms: [r1]}  # time_block, r1
+    - {split: "e31e1b7dd9b4", selection.rooms: [r2]}  # time_block, r2
+    - {split: "e31e1b7dd9b4", selection.rooms: [r1, r2]}  # time_block, mixed
+    - {split: "1e8688472a1f", selection.rooms: [r1, r2]}  # room_holdout, train r1 / test r2
+    - {split: "c4faaf799ad5", selection.rooms: [r1, r2]}  # room_holdout, train r2 / test r1

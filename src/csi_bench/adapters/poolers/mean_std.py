@@ -1,4 +1,4 @@
-"""Mean and standard deviation of each window's per-packet rows."""
+"""Mean and population standard deviation (ddof=0) of each window's per-packet rows."""
 
 from collections.abc import Sequence
 

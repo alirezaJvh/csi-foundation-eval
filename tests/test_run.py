@@ -1498,6 +1498,45 @@ def test_per_packet_run_pools_cached_embeddings(tmp_path, monkeypatch, capsys, f
     assert len(fake_packets) == 4
 
 
+def test_pooled_rows_match_their_windows(tmp_path, fake_packets):
+    # every row must pool its own window's packets, across recordings and split blocks
+    from csi_bench.adapters.datasets.tor_vergata import TorVergata
+    from csi_bench.adapters.splitters.time_block import TimeBlock
+    from csi_bench.adapters.storage.packet_cache import NpzPacketCache
+    from csi_bench.config.experiment import config_from_dict
+    from csi_bench.core.windows import build_windows
+    from csi_bench.runner import run as run_module
+    from csi_bench.runner.discover import discover
+
+    _make_project(tmp_path)
+    discover()
+    data = tmp_path / "data/csi_proc_python/saved_csi"
+    recs = TorVergata(TorVergata.Params(root=str(data))).load()
+    plan = TimeBlock().split(recs, "tor_vergata")
+    windows = build_windows(plan, recs, ["r1"], window_len=10, stride=7)
+    by_id = {rec.recording_id: rec for rec in recs}
+    config = config_from_dict({**CONFIG, **PACKET_CONFIG})
+    matrix = run_module._pool_packets(
+        config,
+        config.extractors[0],
+        windows,
+        by_id,
+        [],
+        NpzPacketCache(tmp_path / "packets"),
+        logging.getLogger("test"),
+        [],
+        {},
+    )
+    extractor = registry.get("extractor", "fake_packets")()
+    packets = {rid: extractor.extract_packets(rec.csi).values for rid, rec in by_id.items()}
+    expected = []
+    for w in windows:
+        rows = packets[w.recording_id][w.start : w.start + 10].astype(np.float64)
+        expected.append(np.concatenate([rows.mean(axis=0), rows.std(axis=0)]))
+    assert len({w.recording_id for w in windows}) == 4
+    np.testing.assert_allclose(matrix.values, np.array(expected), rtol=0, atol=1e-5)
+
+
 def test_per_packet_cold_cache_gives_identical_metrics(tmp_path, monkeypatch, capsys, fake_packets):
     import shutil
 
@@ -1525,6 +1564,7 @@ def test_rerun_saved_per_packet_config_same_run_id(tmp_path, monkeypatch, capsys
     assert _run_id(capsys) == run_id
 
 
+@pytest.mark.skipif(not (ROOT / ".cache/weights").is_dir(), reason="LWM weights not downloaded")
 def test_real_lwm_end_to_end(tmp_path, monkeypatch, capsys):
     _make_project(tmp_path)
     monkeypatch.chdir(tmp_path)

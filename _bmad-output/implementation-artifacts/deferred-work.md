@@ -128,3 +128,7 @@
 ## Deferred from: code review of spec-5-2-lwm-preprocessing-variants.md (2026-10-16)
 
 - `phase_sanitize` takes `np.angle(0) == 0` for zero-magnitude bins, which can trigger spurious `np.unwrap` jumps and bias the shared per-packet slope (`src/csi_bench/adapters/preprocess/phase_sanitize.py:37`). Unverified, would be medium: `tor_vergata` has no zero subcarriers or packets. Before reusing the step on Epic 6 datasets, scan them for null/DC bins; if any exist, mask them out of the fit or weight it by `|h|²`.
+
+## Deferred from: code review of spec-5-3-pool-and-score-lwm-in-the-comparison.md (2026-10-18)
+
+- The row-count guard in `_pool_packets` (`src/csi_bench/runner/run.py:519`, `gave N rows for M packets`, on hits and misses) has no test. Deleting it, or limiting it to cache misses, would go unnoticed. Low risk: the packet key (source_sha256 + preprocessing + fitted hash) already fixes the packet count. Add a parametrised case (extractor returning n−1 rows, and a short cache entry) asserting `ExtractorError`.
