@@ -75,6 +75,18 @@ class FeatureMatrix:
 
 
 @dataclass(frozen=True)
+class PacketFeatures:
+    """float32 `(n_packets, d)` from a per-packet extractor; row i is packet i of the input.
+
+    `input_stats` describes the input amplitudes (e.g. `median_abs`) for run provenance.
+    """
+
+    values: np.ndarray
+    feature_names: tuple[str, ...]
+    input_stats: dict[str, float]
+
+
+@dataclass(frozen=True)
 class Predictions:
     """Predicted labels for one split, row-aligned to the WindowSet."""
 

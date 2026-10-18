@@ -439,3 +439,21 @@ def test_no_interval_note_when_every_run_has_intervals(tmp_path, capsys):
     _make_run(root, "y01", _config(["r1"]), 0.9, 0.8, intervals=INTERVALS)
     code, out, err = _report(root, capsys)
     assert code == 0 and "[-]" not in out and "confidence intervals" not in err
+
+
+def test_pooler_is_a_variant_axis_not_a_method(tmp_path, capsys):
+    root = tmp_path / "runs"
+    for run_id, pooler, val, test in (("lw1", "mean", 0.7, 0.61), ("lw2", "mean_std", 0.8, 0.62)):
+        config = {**_config(["r1"], head="logreg", extractor="lwm"), "pooler": {"name": pooler}}
+        _make_run(root, run_id, config, val, test)
+    _make_run(root, "cls", _config(["r1"]), 0.9, 0.9)  # no pooler key: variant unchanged
+    _, out, _ = _report(root, capsys, "--all-variants")
+    index = pd.read_parquet(rs.index_path(root))
+    methods = dict(zip(index.run_id, index.method, strict=True))
+    variants = dict(zip(index.run_id, index.variant, strict=True))
+    assert methods["lw1"] == methods["lw2"] == "lwm | none | logreg"
+    assert json.loads(variants["lw1"])["pooler"] == "mean"
+    assert json.loads(variants["lw2"])["pooler"] == "mean_std"
+    assert json.loads(variants["cls"]) == {"stride": 1, "window_len": 40}
+    comparison = out[: out.index("All variants")]
+    assert "F1 62.00" in comparison and "F1 61.00" not in comparison  # best val wins

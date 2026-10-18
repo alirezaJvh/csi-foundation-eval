@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-07-2026 09:00
-last_updated: 2026-10-14
+last_updated: 2026-10-17
 project: master
 project_key: NOKEY
 tracking_system: file-system
@@ -69,10 +69,10 @@ development_status:
   4-4-cross-room-classical-baseline: done
   epic-4-retrospective: optional
 
-  epic-5: backlog
-  5-1-embed-every-packet-with-frozen-lwm-v1-1: backlog
-  5-2-lwm-preprocessing-variants: backlog
-  5-3-pool-and-score-lwm-in-the-comparison: backlog
+  epic-5: in-progress
+  5-1-embed-every-packet-with-frozen-lwm-v1-1: done
+  5-2-lwm-preprocessing-variants: done
+  5-3-pool-and-score-lwm-in-the-comparison: review
   epic-5-retrospective: optional
 
   epic-6: backlog

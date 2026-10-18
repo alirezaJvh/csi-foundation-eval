@@ -49,6 +49,14 @@ class ExperimentBuilder:
         self._raw["extractors"] = [_spec(e) for e in extractors]
         return self
 
+    def pooler(self, name: str | None, **params: Any) -> Self:
+        """Pooler for per_packet extractors (`"mean"`, `"mean_std"`); `None` for per_window."""
+        if name is None:
+            self._raw["pooler"] = None
+        else:
+            self._raw["pooler"] = {"name": name, "params": params} if params else {"name": name}
+        return self
+
     def feature_selection(self, spec: Any) -> Self:
         """Shorthand (`{"mrmr": {"k": [2]}}`), `{name, params}` or `None`."""
         self._raw["feature_selection"] = deepcopy(spec)

@@ -93,6 +93,11 @@ def _expand_feature_selection(raw: Any) -> Any:
     return {"name": "mrmr", "params": value}
 
 
+def _expand_pooler(raw: Any) -> Any:
+    """Normalize a bare pooler name to `{name}`; keep null and the explicit form."""
+    return {"name": raw} if isinstance(raw, str) else raw
+
+
 class ExperimentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -103,6 +108,7 @@ class ExperimentConfig(BaseModel):
     window_len: int = Field(ge=1)
     stride: int = Field(default=1, ge=1)
     extractors: list[AdapterSpec] = Field(min_length=1)
+    pooler: AdapterSpec | None = None
     feature_selection: AdapterSpec | None = None
     head: AdapterSpec
     seeds: list[int] = Field(default_factory=lambda: [0], min_length=1)
@@ -112,6 +118,11 @@ class ExperimentConfig(BaseModel):
     @classmethod
     def _expand(cls, raw: Any) -> Any:
         return _expand_preprocessing(raw)
+
+    @field_validator("pooler", mode="before")
+    @classmethod
+    def _expand_pool(cls, raw: Any) -> Any:
+        return _expand_pooler(raw)
 
     @field_validator("feature_selection", mode="before")
     @classmethod
@@ -182,16 +193,45 @@ def validate_registry(config: ExperimentConfig) -> None:
             raise ConfigError(
                 f"preprocessing.{i}.params.fit_scope: whole_recording requires role: reference"
             )
+    per_packet = []
     for i, spec in enumerate(config.extractors):
         cls = _check_adapter("extractor", spec, f"extractors.{i}")
+        per_packet.append(getattr(cls, "granularity", None) == "per_packet")
         if config.window_len < cls.min_window_len:
             raise ConfigError(
                 f"extractors.{i}.name: window_len {config.window_len} "
                 f"< min_window_len {cls.min_window_len} for {spec.name}"
             )
+    _check_pooling(config, per_packet)
     if config.feature_selection is not None:
         _check_adapter("selector", config.feature_selection, "feature_selection")
     _check_adapter("head", config.head, "head")
+
+
+def _check_pooling(config: ExperimentConfig, per_packet: Sequence[bool]) -> None:
+    """A pooler is set iff every extractor is per_packet; window_len 1 needs one (AD-7, AD-8)."""
+    if any(per_packet) and not all(per_packet):
+        raise ConfigError(
+            "extractors: per_packet and per_window extractors cannot be combined in one run"
+        )
+    if all(per_packet):
+        if config.pooler is None:
+            names = ", ".join(registry.names("pooler")) or "none"
+            raise ConfigError(
+                f"pooler: required for per_packet extractors "
+                f"{[s.name for s in config.extractors]}; registered: {names}"
+            )
+        cls = _check_adapter("pooler", config.pooler, "pooler")
+        if config.window_len < cls.min_window_len:
+            raise ConfigError(
+                f"pooler.name: window_len {config.window_len} "
+                f"< min_window_len {cls.min_window_len} for {config.pooler.name}"
+            )
+        return
+    if config.pooler is not None:
+        raise ConfigError("pooler: must be null for per_window extractors")
+    if config.window_len == 1:
+        raise ConfigError("window_len: 1 is valid only for per_packet extractors")
 
 
 def config_from_dict(raw: Any, source: str = "config") -> ExperimentConfig:
@@ -240,14 +280,27 @@ def resolved_body(config: ExperimentConfig, split_root: str | Path = "splits") -
     extractors = []
     for i, spec in enumerate(config.extractors):
         cls = _check_adapter("extractor", spec, f"extractors.{i}")
-        extractors.append(
-            {
-                "name": spec.name,
-                "version": cls.VERSION,
-                "params": registry.affecting_params(cls.Params(**spec.params)),
-            }
-        )
+        entry = {
+            "name": spec.name,
+            "version": cls.VERSION,
+            "params": registry.affecting_params(cls.Params(**spec.params)),
+        }
+        # only extractors with vendored code / pinned weights add these, so older ids hold
+        if hasattr(cls, "VENDOR_HASH"):
+            entry["vendor_hash"] = cls.VENDOR_HASH
+        if hasattr(cls, "WEIGHTS_REVISION"):
+            entry["weights_revision"] = cls.WEIGHTS_REVISION
+        extractors.append(entry)
     body["extractors"] = extractors
+    # absent for per-window runs, so their ids predate the field unchanged
+    body.pop("pooler", None)
+    if config.pooler is not None:
+        cls = _check_adapter("pooler", config.pooler, "pooler")
+        body["pooler"] = {
+            "name": config.pooler.name,
+            "version": cls.VERSION,
+            "params": registry.affecting_params(cls.Params(**config.pooler.params)),
+        }
     body.pop("feature_selection", None)
     if config.feature_selection is not None:
         spec = config.feature_selection
@@ -354,6 +407,54 @@ def context_cache_key(
             },
         }
     )
+
+
+def packet_cache_key(
+    config: ExperimentConfig,
+    spec: AdapterSpec,
+    fitted: Sequence[Mapping[str, Any]],
+    recording_id: str,
+    source_sha256: str,
+) -> str:
+    """Content key of one per_packet extractor's features for one whole recording (AD-10).
+
+    No rooms, `window_len`, `stride`, pooler, head or seeds: every run over the same
+    preprocessed recording shares the entry, so changing them never re-embeds.
+    """
+    dataset_cls = _check_adapter("dataset", AdapterSpec(name=config.dataset), "dataset")
+    ext_cls = _check_adapter("extractor", spec, f"extractor {spec.name}")
+    return sha256_hex(
+        {
+            "kind": "packets",
+            "dataset": config.dataset,
+            "dataset_version": dataset_cls.VERSION,
+            "recording_id": recording_id,
+            "source_sha256": source_sha256,
+            "preprocessing": _step_entries(config),
+            "fitted_hash": sha256_hex(list(fitted)),
+            "extractor": {
+                "name": spec.name,
+                "params": registry.affecting_params(ext_cls.Params(**spec.params)),
+                "version": ext_cls.VERSION,
+                "vendor_hash": getattr(ext_cls, "VENDOR_HASH", None),
+                "weights_revision": getattr(ext_cls, "WEIGHTS_REVISION", None),
+            },
+        }
+    )
+
+
+def _step_entries(config: ExperimentConfig) -> list[dict[str, Any]]:
+    steps = []
+    for i, step in enumerate(config.preprocessing):
+        cls = _check_adapter("preprocess", step, f"preprocessing.{i}")
+        steps.append(
+            {
+                "name": step.name,
+                "version": cls.VERSION,
+                "params": registry.affecting_params(cls.Params(**step.params)),
+            }
+        )
+    return steps
 
 
 def compute_run_id(config: ExperimentConfig, split_root: str | Path = "splits") -> str:

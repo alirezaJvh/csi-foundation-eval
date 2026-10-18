@@ -118,3 +118,13 @@
 ## Deferred from: code review of spec-4-2-room-holdout-splitter.md (2026-10-11)
 
 - No CLI command or script regenerates the committed `room_holdout` plans (`splits/tor_vergata/1e8688472a1f.json`, `c4faaf799ad5.json`); they are built only by calling `write_split_plan(RoomHoldout(...).split(...))` from Python. This predates the story: `time_block` plans have no generator command either. A `csi-bench split` command would cover both.
+
+## Deferred from: code review of spec-5-1-embed-every-packet-with-frozen-lwm-v1-1.md (2026-10-16)
+
+- AC3 ("`ty` passes") is not met as written: `uv run ty check` still reports pre-existing errors in `runner/intervals.py`, `runner/run.py`, `tests/test_run.py` and `tests/test_sweep.py`. Every file Story 5.1 touches is clean.
+- The `lwm` adapter declares `requires = {"n_antennas": "any"}`, but `_validate` rejects more than 4 antennas (`src/csi_bench/adapters/extractors/lwm/adapter.py:115`). The spec mandates this, and every current dataset has ≤4 antennas. An Epic 6 dataset with more antennas would pass config validation and fail at extraction. Revisit then: declare a bound the runner checks, or support `ceil(rows/4)*ceil(cols/4)` tokens.
+- The vendored LWM code has no licence or attribution record in `_vendor/SOURCE.md` (unverified, would be medium). Settle it by checking the licence on the `wi-lab/lwm-v1.1` model card at sha `1b68512d…`, then recording it in `SOURCE.md` (which changes `VENDOR_HASH`).
+
+## Deferred from: code review of spec-5-2-lwm-preprocessing-variants.md (2026-10-16)
+
+- `phase_sanitize` takes `np.angle(0) == 0` for zero-magnitude bins, which can trigger spurious `np.unwrap` jumps and bias the shared per-packet slope (`src/csi_bench/adapters/preprocess/phase_sanitize.py:37`). Unverified, would be medium: `tor_vergata` has no zero subcarriers or packets. Before reusing the step on Epic 6 datasets, scan them for null/DC bins; if any exist, mask them out of the fit or weight it by `|h|²`.

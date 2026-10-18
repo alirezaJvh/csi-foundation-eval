@@ -404,3 +404,32 @@ def test_cross_room_sweep_expands(monkeypatch):
         assert [e.name for e in c.extractors] == ["paper_beamforming"]
         assert (c.head.name, c.stride, c.feature_selection) == ("random_forest", 1, None)
     assert {c.window_len for c in configs if c.window_len != 56} == {20, 30, 40, 50}
+
+
+def test_lwm_sweep_expands(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    raw = yaml.safe_load((ROOT / "experiments/lwm.yaml").read_text())
+    configs = [c for _, c in expand_sweep(raw, "lwm")]
+    assert len({compute_run_id(c) for c in configs}) == len(configs) == 4500
+    by_split = {
+        s: sum(c.split == s for c in configs)
+        for s in ("e31e1b7dd9b4", "1e8688472a1f", "c4faaf799ad5")
+    }
+    assert by_split == {"e31e1b7dd9b4": 2700, "1e8688472a1f": 900, "c4faaf799ad5": 900}
+    # cheap heads first: every logreg run precedes every svm run
+    heads = [c.head.name for c in configs]
+    assert heads[:900] == ["logreg"] * 900 and heads[-900:] == ["svm"] * 900
+    assert {(c.pooler.name if c.pooler else None, c.window_len) for c in configs} == {
+        *(("mean", w) for w in (1, 10, 30, 40, 50)),
+        *(("mean_std", w) for w in (10, 30, 40, 50)),
+    }
+    assert {tuple(s.name for s in c.preprocessing) for c in configs} == {
+        ("antennas", "global_rescale"),
+        ("antennas", "per_packet_power"),
+        ("antennas", "global_rescale", "phase_sanitize"),
+        ("antennas", "per_packet_power", "phase_sanitize"),
+        ("antennas", "global_rescale", "amplitude_only"),
+    }
+    assert {c.extractors[0].params["embedding"] for c in configs} == {"cls", "channel_mean"}
+    assert all(c.feature_selection is None and c.role == "comparison" for c in configs)

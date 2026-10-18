@@ -73,3 +73,23 @@ def test_build_touches_no_dataset(monkeypatch):
     monkeypatch.setattr(TorVergata, "load", boom)
     monkeypatch.setattr(TorVergata, "__init__", boom)
     _builder().build()
+
+
+def test_builder_pooler_for_per_packet_extractor():
+    config = (
+        ExperimentBuilder()
+        .dataset("tor_vergata")
+        .rooms("r1")
+        .preprocessing("ant2", "lwm_power")
+        .window(1)
+        .features(("lwm", {"embedding": "channel_mean"}))
+        .pooler("mean")
+        .head("logreg")
+        .role("comparison")
+        .build()
+    )
+    assert config.pooler is not None and config.pooler.name == "mean"
+    assert config.feature_selection is None
+    with pytest.raises(ConfigError, match="pooler: must be null"):
+        _builder().pooler("mean").build()
+    assert _builder().pooler(None).build().pooler is None

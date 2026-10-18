@@ -1407,3 +1407,142 @@ def test_run_refuses_comparison_on_window_plan_without_validation(tmp_path, monk
     monkeypatch.setattr(experiment, "check_split_role", lambda unit, role: None)
     assert main(["run", _config_file(tmp_path, role="comparison", split=plan.split_hash)]) != 0
     assert "role: reference" in capsys.readouterr().err
+
+
+# --- per-packet extractors and pooling (Story 5.3) -----------------------------------------
+
+
+@pytest.fixture
+def fake_packets():
+    """A fast per_packet extractor that counts the packets it embeds."""
+    from pydantic import BaseModel, ConfigDict
+
+    from csi_bench.core.contracts import PacketFeatures
+
+    calls: list[int] = []
+
+    @registry.register("extractor", "fake_packets")
+    class FakePackets:
+        VERSION = 1
+        granularity = "per_packet"
+        requires: dict = {"phase": True, "n_antennas": "any"}
+        min_window_len = 1
+
+        class Params(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+
+        def __init__(self, params=None) -> None:
+            self.params = params
+
+        def extract_packets(self, csi):
+            calls.append(csi.shape[1])
+            values = np.stack(
+                [
+                    np.abs(csi).mean(axis=(0, 2)),
+                    csi.real.mean(axis=(0, 2)),
+                    csi.imag.mean(axis=(0, 2)),
+                ],
+                axis=1,
+            ).astype(np.float32)
+            return PacketFeatures(
+                values=values,
+                feature_names=("fake.amp", "fake.re", "fake.im"),
+                input_stats={"median_abs": float(np.median(np.abs(csi)))},
+            )
+
+    return calls
+
+
+PACKET_CONFIG = {"extractors": [{"name": "fake_packets"}], "pooler": "mean_std", "window_len": 10}
+
+
+def _provenance(run_id, root):
+    return json.loads(rs.provenance_path(run_id, root).read_text())
+
+
+def test_per_packet_run_pools_cached_embeddings(tmp_path, monkeypatch, capsys, fake_packets):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    cache, root = tmp_path / "cache", tmp_path / "runs"
+    assert run(_config_file(tmp_path, **PACKET_CONFIG), root, cache) == 0
+    first = _run_id(capsys)
+    assert fake_packets == [800] * 4  # each selected (r1) recording embedded once, whole
+    assert _metrics(first, root)["0"]["feature_names"] == [
+        "fake.amp.mean",
+        "fake.re.mean",
+        "fake.im.mean",
+        "fake.amp.std",
+        "fake.re.std",
+        "fake.im.std",
+    ]
+    provenance = _provenance(first, root)
+    stats = provenance["extractor_input_stats"]["fake_packets"]
+    assert sorted(stats) == [f"tor_vergata/{name}" for name in NAMES[:4]]
+    assert all(set(s) == {"median_abs"} for s in stats.values())
+    entries = provenance["feature_cache"]
+    assert [(e["kind"], e["hit"]) for e in entries] == [("packets", False)] * 4
+    assert all((cache / "packets" / f"{e['key']}.npz").is_file() for e in entries)
+
+    # window length, pooler and head changes never re-embed, and stats still reach provenance
+    for changes in (
+        {"window_len": 40},
+        {"pooler": "mean", "window_len": 1},
+        {"head": {"name": "knn", "params": {"k_grid": [3]}}},
+    ):
+        assert run(_config_file(tmp_path, **{**PACKET_CONFIG, **changes}), root, cache) == 0
+        again = _run_id(capsys)
+        assert again != first
+        provenance = _provenance(again, root)
+        assert [e["hit"] for e in provenance["feature_cache"]] == [True] * 4
+        assert provenance["extractor_input_stats"]["fake_packets"] == stats
+    assert len(fake_packets) == 4
+
+
+def test_per_packet_cold_cache_gives_identical_metrics(tmp_path, monkeypatch, capsys, fake_packets):
+    import shutil
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    cache, root = tmp_path / "cache", tmp_path / "runs"
+    assert run(_config_file(tmp_path, **PACKET_CONFIG), root, cache) == 0
+    run_id = _run_id(capsys)
+    cold = _metrics(run_id, root)
+    shutil.rmtree(root)
+    assert run(_config_file(tmp_path, **PACKET_CONFIG), root, cache) == 0
+    assert len(fake_packets) == 4
+    assert _metrics(run_id, root) == cold
+
+
+def test_rerun_saved_per_packet_config_same_run_id(tmp_path, monkeypatch, capsys, fake_packets):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    root = tmp_path / "runs"
+    assert run(_config_file(tmp_path, **PACKET_CONFIG), root, tmp_path / "cache") == 0
+    run_id = _run_id(capsys)
+    saved = yaml.safe_load(rs.config_path(run_id, root).read_text())
+    assert saved["pooler"] == {"name": "mean_std", "params": {}}
+    assert run(rs.config_path(run_id, root), root / "again", tmp_path / "cache") == 0
+    assert _run_id(capsys) == run_id
+
+
+def test_real_lwm_end_to_end(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".cache").mkdir()
+    (tmp_path / ".cache/weights").symlink_to(
+        ROOT / ".cache/weights"
+    )  # reuse the downloaded weights
+    config = {
+        "preprocessing": ["ant2", "lwm_rescale"],
+        "extractors": [{"name": "lwm", "params": {"embedding": "channel_mean"}}],
+        "pooler": "mean_std",
+        "window_len": 10,
+    }
+    root = tmp_path / "runs"
+    assert run(_config_file(tmp_path, **config), root, tmp_path / "cache") == 0
+    run_id = _run_id(capsys)
+    assert _status(rs.run_dir(run_id, root))["status"] == "done"
+    assert len(_metrics(run_id, root)["0"]["feature_names"]) == 256
+    stats = _provenance(run_id, root)["extractor_input_stats"]["lwm"]
+    assert len(stats) == 4
+    assert all(0.1 <= s["median_abs"] <= 10 for s in stats.values())

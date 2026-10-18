@@ -27,12 +27,14 @@ import yaml
 
 from csi_bench.adapters.storage.context_cache import NpzContextCache
 from csi_bench.adapters.storage.feature_cache import NpzFeatureCache
+from csi_bench.adapters.storage.packet_cache import NpzPacketCache
 from csi_bench.config.experiment import (
     ExperimentConfig,
     compute_run_id,
     context_cache_key,
     feature_cache_key,
     load_config,
+    packet_cache_key,
     save_config,
 )
 from csi_bench.config.sweep import expand_sweep
@@ -41,7 +43,7 @@ from csi_bench.core import results_schema as rs
 from csi_bench.core.contracts import FeatureMatrix, Predictions, Recording, WindowSet
 from csi_bench.core.errors import ConfigError, DataError, ExtractorError
 from csi_bench.core.metrics import evaluate
-from csi_bench.core.ports import ContextCache, FeatureCache
+from csi_bench.core.ports import ContextCache, FeatureCache, PacketCache
 from csi_bench.core.preprocess import run_chain
 from csi_bench.core.splitplan import (
     PARTS,
@@ -334,11 +336,16 @@ def collect_provenance(
     duration: float,
     fitted: Sequence[dict],
     feature_cache: Sequence[dict] = (),
+    input_stats: Mapping[str, Mapping[str, Mapping[str, float]]] | None = None,
 ) -> dict[str, Any]:
-    """Git state, package versions, split hash and duration for `provenance.json` (AD-13)."""
+    """Git state, package versions, split hash and duration for `provenance.json` (AD-13).
+
+    `input_stats` (per-packet extractors only) maps extractor -> recording_id -> amplitude
+    statistics of its input, which document the domain gap.
+    """
     status = _git(["status", "--porcelain"])
     dirty = bool(status)
-    return {
+    provenance = {
         "run_id": run_id,
         "dataset": config.dataset,
         "role": config.role,
@@ -364,6 +371,9 @@ def collect_provenance(
         "seeds": list(config.seeds),
         "duration_seconds": duration,
     }
+    if input_stats:
+        provenance["extractor_input_stats"] = {k: dict(v) for k, v in input_stats.items()}
+    return provenance
 
 
 def _validate_extractors(config: ExperimentConfig, recordings: Sequence[Recording]) -> None:
@@ -391,13 +401,32 @@ def _extract(
     workers: int = 1,
     context_cache: ContextCache | None = None,
     bounds: Mapping[str, Mapping[str, tuple[int, int]]] | None = None,
+    packet_cache: PacketCache | None = None,
+    input_stats: dict[str, dict[str, dict[str, float]]] | None = None,
 ) -> FeatureMatrix:
-    """Per extractor: load its matrix from the cache or compute it from its windows' slices."""
+    """Per extractor: load its matrix from the cache or compute it from its windows' slices.
+
+    A per_packet extractor instead embeds whole recordings through `packet_cache` and the
+    config's pooler reduces each window; its amplitude statistics land in `input_stats`.
+    """
     window_ids = [w.window_id for w in windows]
     slices: list[np.ndarray] | None = None
     columns: list[np.ndarray] = []
     names: list[str] = []
     for spec in config.extractors:
+        ext_cls: Any = registry.get("extractor", spec.name)
+        if getattr(ext_cls, "granularity", None) == "per_packet":
+            if packet_cache is None:
+                raise ConfigError(f"extractor {spec.name} is per_packet but no packet cache is set")
+            stats: dict[str, dict[str, float]] = {}
+            matrix = _pool_packets(
+                config, spec, windows, by_id, fitted, packet_cache, log, cache_report, stats
+            )
+            if input_stats is not None:
+                input_stats[spec.name] = stats
+            columns.append(matrix.values)
+            names.extend(matrix.feature_names)
+            continue
         key = feature_cache_key(config, spec, split_hash, fitted)
         matrix = cache.get(key, window_ids)
         hit = matrix is not None
@@ -451,6 +480,78 @@ def _extract(
     if values.size and constant.size:
         raise ExtractorError(f"constant feature columns: {[names[i] for i in constant]}")
     return FeatureMatrix(values=values, feature_names=tuple(names))
+
+
+def _pool_packets(
+    config: ExperimentConfig,
+    spec: Any,
+    windows: WindowSet,
+    by_id: dict[str, Recording],
+    fitted: Sequence[dict],
+    cache: PacketCache,
+    log: logging.Logger,
+    cache_report: list[dict[str, Any]],
+    stats: dict[str, dict[str, float]],
+) -> FeatureMatrix:
+    """Embed each windowed recording once (cached, no window length in the key), then pool."""
+    assert config.pooler is not None  # config validation requires one for per_packet
+    pooler_cls: Any = registry.get("pooler", config.pooler.name)
+    pooler = pooler_cls(pooler_cls.Params(**config.pooler.params))
+    ext_cls: Any = registry.get("extractor", spec.name)
+    extractor = None  # built on the first miss, so the model loads at most once per run
+    groups: dict[str, list[int]] = {}
+    for i, w in enumerate(windows):
+        groups.setdefault(w.recording_id, []).append(i)
+    values: np.ndarray | None = None
+    names: tuple[str, ...] | None = None
+    began = time.monotonic()
+    for recording_id, indices in groups.items():
+        rec = by_id[recording_id]
+        key = packet_cache_key(config, spec, fitted, recording_id, rec.meta.source_sha256)
+        packets = cache.get(key)
+        hit = packets is not None
+        if packets is None:
+            if extractor is None:
+                extractor = ext_cls(ext_cls.Params(**spec.params))
+            packets = extractor.extract_packets(rec.csi)
+        if packets.values.shape[0] != rec.csi.shape[1]:
+            raise ExtractorError(
+                f"{spec.name} gave {packets.values.shape[0]} rows for "
+                f"{rec.csi.shape[1]} packets of {recording_id}"
+            )
+        if not hit:
+            cache.put(key, packets)
+        log.info(
+            "packet cache %s %s %s key=%s", "hit" if hit else "miss", spec.name, recording_id, key
+        )
+        cache_report.append(
+            {
+                "extractor": spec.name,
+                "kind": "packets",
+                "recording_id": recording_id,
+                "key": key,
+                "hit": hit,
+            }
+        )
+        stats[recording_id] = dict(packets.input_stats)
+        members = [windows[i] for i in indices]
+        part = pooler.pool(packets, [w.start for w in members], config.window_len)
+        if names is None:
+            names = part.feature_names
+            values = np.empty((len(windows), part.values.shape[1]), dtype=np.float32)
+        elif part.feature_names != names:
+            raise ExtractorError(f"{spec.name} returned different feature names across recordings")
+        assert values is not None
+        values[indices] = part.values
+    if names is None or values is None:
+        raise ExtractorError("no windows to extract")
+    log.info(
+        "extraction %s: %.2fs path=packets pooler=%s",
+        spec.name,
+        time.monotonic() - began,
+        config.pooler.name,
+    )
+    return FeatureMatrix(values=values, feature_names=names)
 
 
 def _subset(matrix: FeatureMatrix, indices: list[int]) -> FeatureMatrix:
@@ -660,6 +761,7 @@ def _execute(
                 )
         log.info("windows=%d rooms=%s", len(windows), config.selection.rooms)
         cache_report: list[dict[str, Any]] = []
+        input_stats: dict[str, dict[str, dict[str, float]]] = {}
         stage = time.monotonic()
         matrix = _extract(
             config,
@@ -673,6 +775,8 @@ def _execute(
             workers,
             NpzContextCache(Path(cache_root) / "context"),
             plan.blocks,
+            NpzPacketCache(Path(cache_root) / "packets"),
+            input_stats,
         )
         log.info("stage extract: %.2fs", time.monotonic() - stage)
 
@@ -723,7 +827,13 @@ def _execute(
         _write_json(
             rs.provenance_path(run_id, root),
             collect_provenance(
-                config, run_id, plan.split_hash, time.monotonic() - started, fitted, cache_report
+                config,
+                run_id,
+                plan.split_hash,
+                time.monotonic() - started,
+                fitted,
+                cache_report,
+                input_stats,
             ),
         )
         _write_status(

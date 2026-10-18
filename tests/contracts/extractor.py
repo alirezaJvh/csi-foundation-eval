@@ -35,3 +35,24 @@ def _check_block_path(extractor: FeatureExtractor, windows: Sequence[np.ndarray]
         context = cast(Any, extractor).compute_context(block)
         shared = cast(Any, extractor).extract_blocks(block, offsets, window_len, context=context)
         np.testing.assert_array_equal(shared.values, sliced.values)
+
+
+def check_packet_extractor(extractor: Any, csi: np.ndarray) -> None:
+    """Per-packet contract: one row per packet, and one-packet calls match the batch rows.
+
+    Batched matmul is not bit-exact against single rows, hence `atol=1e-5`.
+    """
+    batch = extractor.extract_packets(csi)
+    n_packets = csi.shape[1]
+    assert batch.values.dtype == np.float32
+    assert batch.values.ndim == 2
+    assert batch.values.shape == (n_packets, len(batch.feature_names))
+    assert np.isfinite(batch.values).all()
+    if n_packets > 1:
+        assert (np.ptp(batch.values, axis=0) > 0).all(), "constant column"
+    assert len(set(batch.feature_names)) == len(batch.feature_names)
+    assert all(name and "." in name for name in batch.feature_names)
+    for i in range(n_packets):
+        single = extractor.extract_packets(csi[:, i : i + 1])
+        assert single.feature_names == batch.feature_names
+        np.testing.assert_allclose(single.values, batch.values[i : i + 1], rtol=0, atol=1e-5)

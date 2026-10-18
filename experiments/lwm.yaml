@@ -1,0 +1,46 @@
+# Frozen LWM v1.1 sweep (Story 5.3): within-room (time_block) and cross-room (room_holdout).
+# 5 heads x 2 antenna sets x 5 LWM presets x 2 embeddings x 9 (pooler, window) pairs x 5 protocols
+# = 4500 runs (2700 time_block: r1, r2, mixed; 1800 room_holdout: r1→r2, r2→r1).
+# The pairs are mean x {1, 10, 30, 40, 50} and mean_std x {10, 30, 40, 50}: mean_std needs at
+# least 2 packets (the std of one packet is constant), so mean_std x w1 does not exist.
+# head.name is the outermost axis, so the cheap heads (logreg, knn, mlp) cover every cell first
+# and give a usable LWM table early; random_forest and svm fill in afterwards. Runs resume.
+# Per-packet embeddings are cached per recording (no window length in the key): each
+# (antennas, preset, embedding, fitted state) embeds the selected recordings once.
+# Estimate on 16 cores: ~3 days at 4 workers, ~2 days with `--workers 12`. Head fits dominate;
+# embedding adds ~8 h: ~68 embedding passes (fitted rescale state differs per protocol; the
+# stateless power presets share one pass), each ~3.5-9 min on 1 torch thread (runner-owned).
+# The antenna preset comes first, then the LWM preset (rescaling is mandatory for LWM).
+dataset: tor_vergata
+selection: {rooms: [r1]}
+split: "e31e1b7dd9b4"
+preprocessing: [ant2, lwm_rescale]
+window_len: 10
+stride: 1
+extractors: [{name: lwm, params: {embedding: cls}}]
+pooler: mean
+feature_selection: null
+head: {name: logreg}
+seeds: [0]
+role: comparison
+sweep:
+  head.name: [logreg, knn, mlp, random_forest, svm]
+  preprocessing.0: [ant2, ant4]
+  preprocessing.1: [lwm_rescale, lwm_power, lwm_rescale_phase, lwm_power_phase, lwm_amplitude]
+  extractors.0.params.embedding: [cls, channel_mean]
+  "@pooling":
+    - {pooler: mean, window_len: 1}
+    - {pooler: mean, window_len: 10}
+    - {pooler: mean, window_len: 30}
+    - {pooler: mean, window_len: 40}
+    - {pooler: mean, window_len: 50}
+    - {pooler: mean_std, window_len: 10}
+    - {pooler: mean_std, window_len: 30}
+    - {pooler: mean_std, window_len: 40}
+    - {pooler: mean_std, window_len: 50}
+  "@protocol":
+    - {split: "e31e1b7dd9b4", selection.rooms: [r1]}
+    - {split: "e31e1b7dd9b4", selection.rooms: [r2]}
+    - {split: "e31e1b7dd9b4", selection.rooms: [r1, r2]}
+    - {split: "1e8688472a1f", selection.rooms: [r1, r2]}
+    - {split: "c4faaf799ad5", selection.rooms: [r1, r2]}

@@ -5,7 +5,7 @@ from typing import Protocol
 
 import numpy as np
 
-from csi_bench.core.contracts import FeatureMatrix, Recording, SplitPlan
+from csi_bench.core.contracts import FeatureMatrix, PacketFeatures, Recording, SplitPlan
 
 
 class DatasetSource(Protocol):
@@ -26,6 +26,12 @@ class Splitter(Protocol):
 class FeatureExtractor(Protocol):
     """Pure per-window extractor; batched output equals single-window output (AD-8)."""
 
+    # A `granularity = "per_packet"` extractor implements
+    #     extract_packets(csi) -> PacketFeatures
+    # in place of `extract`: `csi` is one complex64 `(antennas, packets, subcarriers)` array and
+    # row i of the result is packet i. The runner caches it per recording and a `Pooler`
+    # reduces each window's rows to one vector.
+
     VERSION: int
     granularity: str
     requires: dict
@@ -44,6 +50,19 @@ class FeatureExtractor(Protocol):
     # It may also offer `compute_context(block) -> np.ndarray` (intermediates of the whole block,
     # independent of window length, stride and room set); the runner then caches them per block
     # and passes them back as `extract_blocks(..., context=...)`, which must give the same output.
+
+
+class Pooler(Protocol):
+    """Weight-free reduction of a window's per-packet rows to one vector (AD-8)."""
+
+    VERSION: int
+    min_window_len: int
+
+    def pool(
+        self, packets: PacketFeatures, starts: Sequence[int], window_len: int
+    ) -> FeatureMatrix:
+        """Row j pools packet rows `[starts[j], starts[j] + window_len)` of one recording."""
+        ...
 
 
 class Head(Protocol):
@@ -125,6 +144,18 @@ class ContextCache(Protocol):
         ...
 
     def put(self, key: str, values: np.ndarray) -> None:
+        """Store atomically; a failed write leaves no entry."""
+        ...
+
+
+class PacketCache(Protocol):
+    """Runner-owned store of one recording's per-packet features (AD-10)."""
+
+    def get(self, key: str) -> PacketFeatures | None:
+        """Return the cached features; a corrupt entry is a miss."""
+        ...
+
+    def put(self, key: str, features: PacketFeatures) -> None:
         """Store atomically; a failed write leaves no entry."""
         ...
 

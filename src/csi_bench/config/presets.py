@@ -14,4 +14,19 @@ PREPROCESS_PRESETS: dict[str, list[dict[str, Any]]] = {
         {"name": "global_rescale", "params": {}},
     ],
     "paper_norm": [{"name": "recording_mean_norm", "params": {}}],
+    # LWM input variants (antenna-agnostic; list ant2/ant4 first, e.g. [ant2, lwm_power])
+    "lwm_rescale": [{"name": "global_rescale", "params": {}}],
+    "lwm_power": [{"name": "per_packet_power", "params": {}}],
+    "lwm_rescale_phase": [
+        {"name": "global_rescale", "params": {}},
+        {"name": "phase_sanitize", "params": {}},
+    ],
+    "lwm_power_phase": [
+        {"name": "per_packet_power", "params": {}},
+        {"name": "phase_sanitize", "params": {}},
+    ],
+    "lwm_amplitude": [
+        {"name": "global_rescale", "params": {}},
+        {"name": "amplitude_only", "params": {}},
+    ],
 }

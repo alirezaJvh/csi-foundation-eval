@@ -36,6 +36,7 @@ def _variant(config: dict) -> str:
         "stride": config["stride"],
         "preprocessing": [s["name"] for s in config.get("preprocessing", [])],
         "extractors": {e["name"]: e["params"] for e in config["extractors"] if e["params"]},
+        "pooler": (config.get("pooler") or {}).get("name"),
         "feature_selection": (config.get("feature_selection") or {}).get("params") or None,
         "head": config["head"]["params"] or None,
     }
