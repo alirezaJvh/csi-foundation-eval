@@ -40,3 +40,6 @@ _bmad/
 
 # Logs
 *.log
+
+# Public datasets
+data/padova/
