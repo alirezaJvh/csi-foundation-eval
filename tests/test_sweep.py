@@ -406,6 +406,26 @@ def test_cross_room_sweep_expands(monkeypatch):
     assert {c.window_len for c in configs if c.window_len != 56} == {20, 30, 40, 50}
 
 
+def test_padova_sweep_expands(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    raw = yaml.safe_load((ROOT / "experiments/padova_classical_baseline.yaml").read_text())
+    baseline = yaml.safe_load((ROOT / "experiments/classical_baseline.yaml").read_text())
+    rooms = "selection.rooms"
+    assert {k: v for k, v in raw["sweep"].items() if k != rooms} == {
+        k: v for k, v in baseline["sweep"].items() if k != rooms
+    }
+    configs = [c for _, c in expand_sweep(raw, "padova_classical_baseline")]
+    assert len({compute_run_id(c) for c in configs}) == len(configs) == 216
+    for c in configs:
+        assert (c.dataset, c.split, c.stride) == ("padova", "b6010d87ce4d", 9)
+    assert sorted({tuple(c.selection.rooms) for c in configs}) == [
+        ("bedroom",),
+        ("laboratory",),
+        ("living_room",),
+    ]
+
+
 def test_lwm_sweep_expands(monkeypatch):
     monkeypatch.chdir(ROOT)
     discover()

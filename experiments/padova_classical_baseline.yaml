@@ -1,0 +1,28 @@
+# Padova 80 MHz copy of classical_baseline.yaml: 4 windows x 3 feature sets x 2 selection x 3 heads x 3 room sets = 216 runs.
+# Stride rule: padova uses stride 9 (one window start about every 50 ms at 173 Hz); tor_vergata uses stride 1. Stride is not tuned.
+# Rooms are the physical places, one room per cell: bedroom (S1-S5), living_room (S6), laboratory (S7).
+# window_len starts at 20 because paper_beamforming needs at least 18 packets.
+# Preprocessing is ant2 for every cell (paper_beamforming requires exactly 2 antennas).
+# mrmr k stays <= 3, the smallest feature-set width (amplitude_stats).
+dataset: padova
+split: "b6010d87ce4d"  # time_block, fractions 0.6/0.2/0.2, gap 64
+selection: {rooms: [bedroom]}
+preprocessing: [ant2]
+window_len: 40
+stride: 9
+extractors: [{name: amplitude_stats}]
+feature_selection: null
+head: {name: svm}
+seeds: [0]
+role: comparison
+sweep:
+  window_len: [20, 30, 40, 50]
+  extractors:
+    - [{name: amplitude_stats}]
+    - [{name: paper_beamforming}]
+    - [{name: amplitude_stats}, {name: paper_beamforming}]
+  feature_selection:
+    - null
+    - {mrmr: {k: [2, 3]}}
+  head.name: [svm, knn, random_forest]
+  selection.rooms: [[bedroom], [living_room], [laboratory]]

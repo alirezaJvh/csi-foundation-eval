@@ -132,3 +132,7 @@
 ## Deferred from: code review of spec-5-3-pool-and-score-lwm-in-the-comparison.md (2026-10-18)
 
 - The row-count guard in `_pool_packets` (`src/csi_bench/runner/run.py:519`, `gave N rows for M packets`, on hits and misses) has no test. Deleting it, or limiting it to cache misses, would go unnoticed. Low risk: the packet key (source_sha256 + preprocessing + fitted hash) already fixes the packet count. Add a parametrised case (extractor returning n−1 rows, and a short cache entry) asserting `ExtractorError`.
+
+## Deferred from: code review of spec-6-1-padova-80-mhz-loader.md (2026-10-28)
+
+- AC2/AC3 of story 6.1 are not shown by a real run. No Padova run exists under `runs/`, so it is unverified that a run loads `splits/padova/b6010d87ce4d.json` without a splitter `DataError` and that `report` shows a `padova / time_block` section. Would be medium. Settle by running one cell of `experiments/padova_classical_baseline.yaml`, then `report`.

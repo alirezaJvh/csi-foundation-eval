@@ -143,7 +143,7 @@ def test_unreadable_plan(tmp_path, how):
 
 
 def test_committed_plans_are_consistent():
-    paths = sorted(COMMITTED.glob("*.json"))
+    paths = sorted((ROOT / "splits").glob("*/*.json"))
     assert paths
     for path in paths:
         raw = json.loads(path.read_text())
