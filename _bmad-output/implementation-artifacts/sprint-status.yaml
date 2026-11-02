@@ -68,7 +68,7 @@ development_status:
   4-2-room-holdout-splitter: done
   4-3-confidence-intervals-from-a-recording-bootstrap: done
   4-4-cross-room-classical-baseline: done
-  4-5-honest-validation-score-for-selection: backlog
+  4-5-honest-validation-score-for-selection: in-progress
   epic-4-retrospective: optional
 
   epic-5: in-progress

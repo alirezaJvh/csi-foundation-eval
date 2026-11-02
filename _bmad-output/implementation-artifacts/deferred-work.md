@@ -136,3 +136,10 @@
 ## Deferred from: code review of spec-6-1-padova-80-mhz-loader.md (2026-10-28)
 
 - AC2/AC3 of story 6.1 are not shown by a real run. No Padova run exists under `runs/`, so it is unverified that a run loads `splits/padova/b6010d87ce4d.json` without a splitter `DataError` and that `report` shows a `padova / time_block` section. Would be medium. Settle by running one cell of `experiments/padova_classical_baseline.yaml`, then `report`.
+
+## Deferred from: code review of spec-4-5-honest-validation-score-for-selection.md (2026-11-02)
+
+- Ties on the tuning score go to the first run in directory order (`src/csi_bench/runner/report.py` `_best`). Pre-existing rule; measure tied cells on the rescored store before choosing a tie-break. No rerun needed.
+- `rescore-report` does not show each side's deciding score or a test-score delta, and has no leakage before/after (`src/csi_bench/runner/rescore.py` `_changed_cells`). Can be added after the rescore from the backup, with no rerun.
+- `rescore-report` does not check `val` metrics or the score against the old `selection` score (`src/csi_bench/runner/rescore.py` `_test_differences`). Can be added after the rescore from the backup, with no rerun.
+- Notebook `notebooks/01_classical_overview.ipynb`: saved output is stale, its test only matches source text, a stale index raises `KeyError`, and a part-way rescore plots nothing without a message. Re-execute after the rescore; `csi-bench report` clears the `KeyError`.

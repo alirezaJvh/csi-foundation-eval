@@ -13,6 +13,11 @@ SCOPES = ("recording", "class", "room", "total")
 
 SPLIT_NAMES = ("val", "test")
 STATUS_STATES = ("pending", "running", "done", "failed")
+METRICS_FILE = "metrics.json"
+PROVENANCE_FILE = "provenance.json"
+# The val macro-F1 of the chosen candidate, fitted on train only: the one score that selects.
+TUNING_SCORE = "tuning_val_macro_f1"
+TUNING_VAL = "tuning_val"
 
 DATASET_TABLE_SCHEMA = pa.schema(
     [
@@ -142,11 +147,11 @@ def status_path(run_id: str, root: str | Path = "runs") -> Path:
 
 
 def metrics_path(run_id: str, root: str | Path = "runs") -> Path:
-    return run_dir(run_id, root) / "metrics.json"
+    return run_dir(run_id, root) / METRICS_FILE
 
 
 def provenance_path(run_id: str, root: str | Path = "runs") -> Path:
-    return run_dir(run_id, root) / "provenance.json"
+    return run_dir(run_id, root) / PROVENANCE_FILE
 
 
 def log_path(run_id: str, root: str | Path = "runs") -> Path:
@@ -192,8 +197,15 @@ def metrics_document(
     per_seed: dict[int, dict[str, Metrics]],
     feature_names: dict[int, list[str]] | None = None,
     selection: dict[int, dict] | None = None,
+    tuning_val: dict[int, float] | None = None,
 ) -> dict:
     """Per-seed metrics plus mean ± std per split, in the `metrics.json` schema.
+
+    The `val` metrics come from the model refitted on train ∪ val, so they are in-sample
+    diagnostics and never select anything. `tuning_val` maps a seed to the tuning-stage val
+    macro-F1 of its chosen candidate (fitted on train only), stored as
+    `seeds.<seed>.tuning_val_macro_f1`. `mean_std.tuning_val.macro_f1` holds its `[mean, std]`
+    and is written only when every seed has a score.
 
     `feature_names` maps a seed to the columns its head saw; each is stored as
     `seeds.<seed>.feature_names`. `selection` maps a seed to the selector's candidates
@@ -207,6 +219,9 @@ def metrics_document(
         seeds[str(seed)]["feature_names"] = list(names)
     for seed, chosen in (selection or {}).items():
         seeds[str(seed)]["selection"] = chosen
+    scores = tuning_val or {}
+    for seed, score in scores.items():
+        seeds[str(seed)][TUNING_SCORE] = score
     class_names = next(iter(next(iter(per_seed.values())).values())).class_names if per_seed else ()
     aggregate: dict[str, dict] = {}
     for split in SPLIT_NAMES:
@@ -215,6 +230,8 @@ def metrics_document(
             "accuracy": _mean_std([m.accuracy for m in present]),
             "macro_f1": _mean_std([m.macro_f1 for m in present]),
         }
+    if per_seed and all(seed in scores for seed in per_seed):
+        aggregate[TUNING_VAL] = {"macro_f1": _mean_std([scores[seed] for seed in per_seed])}
     return {
         "class_names": list(class_names),
         "seeds": seeds,
@@ -248,6 +265,8 @@ INDEX_TABLE_SCHEMA = pa.schema(
         ("stride", pa.int64()),
         ("variant", pa.string()),
         ("n_seeds", pa.int64()),
+        (f"{TUNING_SCORE}_mean", pa.float64()),
+        (f"{TUNING_SCORE}_std", pa.float64()),
         ("val_macro_f1_mean", pa.float64()),
         ("val_macro_f1_std", pa.float64()),
         ("val_accuracy_mean", pa.float64()),

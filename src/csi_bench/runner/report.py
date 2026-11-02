@@ -54,7 +54,8 @@ def _room_column(config: dict, dataset: str, splitter: str, split_root: str | Pa
     return rs.room_setting(config["selection"]["rooms"])
 
 
-def _index_row(path: Path, root: Path, split_root: str | Path = "splits") -> dict[str, Any] | None:
+def _config_row(path: Path, root: Path, split_root: str | Path = "splits") -> dict[str, Any] | None:
+    """An index row with what the run's config and status say, and no scores yet."""
     try:
         dataset, splitter, run_id = rs.parse_run_dir(path, root)
         config = yaml.safe_load(rs.config_path(run_id, root).read_text(encoding="utf-8"))
@@ -76,9 +77,18 @@ def _index_row(path: Path, root: Path, split_root: str | Path = "splits") -> dic
         )
     except (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError, DataError):
         return None
+    return row
+
+
+def _read_scores(row: dict[str, Any], metrics_file: Path, provenance_file: Path) -> None:
+    """Fill `row`'s score columns; each group apart, so old or partial files still index."""
     try:
-        provenance = _read_json(rs.provenance_path(run_id, root))
-        mean_std = _read_json(rs.metrics_path(run_id, root))["mean_std"]
+        metrics = _read_json(metrics_file)
+    except (OSError, ValueError):
+        return
+    try:
+        provenance = _read_json(provenance_file)
+        mean_std = metrics["mean_std"]
         scores = {}
         for split in rs.SPLIT_NAMES:
             for score in _SCORES:
@@ -88,10 +98,16 @@ def _index_row(path: Path, root: Path, split_root: str | Path = "splits") -> dic
         row["split_hash"] = provenance["split_hash"]
         row["dirty"] = bool(provenance["git"]["dirty"])
         row.update(scores)
-    except (OSError, ValueError, KeyError, TypeError, DataError):
+    except (OSError, ValueError, KeyError, TypeError):
         pass
     try:
-        test = _read_json(rs.metrics_path(run_id, root))["intervals"]["test"]
+        mean, std = metrics["mean_std"][rs.TUNING_VAL]["macro_f1"]
+        row[f"{rs.TUNING_SCORE}_mean"] = float(mean)
+        row[f"{rs.TUNING_SCORE}_std"] = float(std)
+    except (ValueError, KeyError, TypeError):
+        pass
+    try:
+        test = metrics["intervals"]["test"]
         bounds = {
             f"test_{score}_{side}": float(test[score][i])
             for score in _SCORES
@@ -99,8 +115,14 @@ def _index_row(path: Path, root: Path, split_root: str | Path = "splits") -> dic
         }
         single = ",".join(str(c) for c in test["single_recording_classes"])
         row.update(bounds, single_recording_classes=single)
-    except (OSError, ValueError, KeyError, TypeError, IndexError, DataError):
+    except (ValueError, KeyError, TypeError, IndexError):
         pass
+
+
+def _index_row(path: Path, root: Path, split_root: str | Path = "splits") -> dict[str, Any] | None:
+    row = _config_row(path, root, split_root)
+    if row is not None:
+        _read_scores(row, path / rs.METRICS_FILE, path / rs.PROVENANCE_FILE)
     return row
 
 
@@ -156,11 +178,12 @@ def _command(row: dict, root: Path) -> str:
 
 
 def _best(rows: list[dict]) -> dict[tuple[str, str], dict]:
-    """The best-validation row per (method, room setting)."""
+    """The row with the best tuning-stage val macro-F1 per (method, room setting)."""
+    score = f"{rs.TUNING_SCORE}_mean"
     best: dict[tuple[str, str], dict] = {}
     for r in rows:
         key = (r["method"], r["room_setting"])
-        if key not in best or r["val_macro_f1_mean"] > best[key]["val_macro_f1_mean"]:
+        if key not in best or r[score] > best[key][score]:
             best[key] = r
     return best
 
@@ -236,6 +259,7 @@ def _variants(rows: list[dict]) -> list[str]:
             r["method"],
             r["room_setting"],
             r["variant"],
+            _pm(r, rs.TUNING_VAL, "macro_f1"),
             _pm(r, "val", "macro_f1"),
             _pm(r, "test", "macro_f1"),
             _interval(r, "macro_f1"),
@@ -244,7 +268,16 @@ def _variants(rows: list[dict]) -> list[str]:
         ]
         for r in sorted(rows, key=lambda r: (r["method"], r["room_setting"], r["variant"]))
     ]
-    header = ["method", "room", "variant", "val F1", "test F1", "test F1 95%", "test acc"]
+    header = [
+        "method",
+        "room",
+        "variant",
+        "tuning val F1",
+        "val F1 (in-sample)",
+        "test F1",
+        "test F1 95%",
+        "test acc",
+    ]
     return _grid([*header, "run_id"], body)
 
 
@@ -295,7 +328,7 @@ def report(
     except OSError as e:
         sys.stderr.write(f"error: cannot write index: {e}\n")
         return 2
-    usable = [
+    shown = [
         r
         for r in rows
         if r["status"] == "done"
@@ -303,6 +336,12 @@ def report(
         and r["val_macro_f1_mean"] is not None
         and (include_dirty or not r["dirty"])
     ]
+    usable = [r for r in shown if r[f"{rs.TUNING_SCORE}_mean"] is not None]
+    if len(shown) > len(usable):
+        sys.stderr.write(
+            f"note: {len(shown) - len(usable)} done runs have no tuning-stage val score and are "
+            f"not reported; run `csi-bench rescore-runs --runs {root}`\n"
+        )
     legacy = find_legacy_dirs(root)
     if legacy:
         sys.stderr.write(
@@ -385,7 +424,7 @@ def _section(
     reference = [r for r in rows if r["role"] == "reference"]
     out: list[str] = []
     if comparison:
-        out += ["Comparison (test score of the best-validation variant)", ""]
+        out += ["Comparison (test score of the variant with the best tuning-stage val F1)", ""]
         out += _comparison(comparison, root, None, columns(comparison))
         if all_variants:
             out += ["", "All variants", ""] + _variants(comparison)

@@ -207,7 +207,7 @@ def test_real_data_run(tmp_path, monkeypatch, capsys):
     run_id = capsys.readouterr().out.strip()
     assert _status(rs.run_dir(run_id, tmp_path))["status"] == "done"
     metrics = json.loads(rs.metrics_path(run_id, tmp_path).read_text())
-    assert set(metrics["seeds"]["0"]) == {"val", "test", "feature_names"}
+    assert set(metrics["seeds"]["0"]) == {"val", "test", "feature_names", rs.TUNING_SCORE}
 
 
 def test_provenance_git_state(monkeypatch):
@@ -393,12 +393,67 @@ def test_add_a_seed_runs_only_the_new_seed(tmp_path, monkeypatch, capsys):
         assert after["seeds"][s] == before["seeds"][s]
     assert rs.predictions_path(run_id, 3, root).is_file()
     _assert_intervals_cover_means(after)  # computed over the resumed and the fresh seeds
-    for split, stats in after["mean_std"].items():
-        for metric, (mean, std) in stats.items():
+    for split in rs.SPLIT_NAMES:
+        for metric, (mean, std) in after["mean_std"][split].items():
             values = [after["seeds"][str(s)][split][metric] for s in range(4)]
             assert mean == pytest.approx(np.mean(values))
             assert std == pytest.approx(np.std(values))
     assert _status(rs.run_dir(run_id, root))["status"] == "done"
+
+
+def test_metrics_hold_the_tuning_score_of_the_fitted_head(tmp_path, monkeypatch, capsys):
+    from csi_bench.adapters.heads.logreg import LogReg
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    scored: dict[int, float] = {}
+    original = LogReg.fit
+
+    def spy(self, *args):
+        original(self, *args)
+        scored[self.seed] = self.val_score
+
+    monkeypatch.setattr(LogReg, "fit", spy)
+    assert main(["run", _config_file(tmp_path, seeds=[0, 1])]) == 0
+    run_id = _run_id(capsys)
+    metrics = json.loads(rs.metrics_path(run_id, tmp_path / "runs").read_text())
+    for seed in (0, 1):
+        assert metrics["seeds"][str(seed)][rs.TUNING_SCORE] == scored[seed]
+    mean, std = metrics["mean_std"][rs.TUNING_VAL]["macro_f1"]
+    assert mean == pytest.approx(np.mean(list(scored.values())))
+    assert std == pytest.approx(np.std(list(scored.values())))
+    assert set(metrics["mean_std"]["val"]) == {"accuracy", "macro_f1"}
+
+
+def test_resume_carries_the_tuning_score(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert main(["run", _config_file(tmp_path, seeds=[0])]) == 0
+    run_id = _run_id(capsys)
+    path = rs.metrics_path(run_id, tmp_path / "runs")
+    old = json.loads(path.read_text())["seeds"]["0"][rs.TUNING_SCORE]
+    assert main(["run", _config_file(tmp_path, seeds=[0, 1])]) == 0
+    after = json.loads(path.read_text())
+    assert after["seeds"]["0"][rs.TUNING_SCORE] == old
+    assert rs.TUNING_SCORE in after["seeds"]["1"]
+    assert rs.TUNING_VAL in after["mean_std"]
+
+
+def test_resume_on_an_old_seed_writes_no_tuning_mean(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert main(["run", _config_file(tmp_path, seeds=[0])]) == 0
+    run_id = _run_id(capsys)
+    path = rs.metrics_path(run_id, tmp_path / "runs")
+    document = json.loads(path.read_text())
+    del document["seeds"]["0"][rs.TUNING_SCORE]
+    del document["mean_std"][rs.TUNING_VAL]
+    path.write_text(json.dumps(document))
+    assert main(["run", _config_file(tmp_path, seeds=[0, 1])]) == 0
+    after = json.loads(path.read_text())
+    assert rs.TUNING_SCORE not in after["seeds"]["0"]  # never backfilled
+    assert rs.TUNING_SCORE in after["seeds"]["1"]
+    assert rs.TUNING_VAL not in after["mean_std"]
 
 
 def test_same_seeds_is_a_no_op(tmp_path, monkeypatch, capsys):
@@ -448,7 +503,7 @@ def test_each_head_end_to_end(tmp_path, monkeypatch, capsys, head):
     assert main(["run", _config_file(tmp_path, head=head)]) == 0
     run_id = _run_id(capsys)
     metrics = json.loads(rs.metrics_path(run_id, tmp_path / "runs").read_text())
-    assert set(metrics["seeds"]["0"]) == {"val", "test", "feature_names"}
+    assert set(metrics["seeds"]["0"]) == {"val", "test", "feature_names", rs.TUNING_SCORE}
 
 
 def test_bad_head_grid_is_config_error(tmp_path, monkeypatch, capsys):
@@ -768,6 +823,7 @@ def test_mrmr_picks_k_on_val_and_records_a_prefix(tmp_path, monkeypatch, capsys)
             {"n_features": 5, "val_score": 0.9},
         ],
     }
+    assert _metrics(run_id, tmp_path / "runs")["0"][rs.TUNING_SCORE] == 0.9
 
 
 def test_mrmr_k_too_large_fails_before_any_seed(tmp_path, monkeypatch, capsys):

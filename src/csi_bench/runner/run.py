@@ -616,7 +616,7 @@ def _run_seed(
     class_names: Sequence[str],
     run_id: str,
     root: str | Path,
-) -> tuple[dict[str, Any], list[str], dict[str, Any] | None]:
+) -> tuple[dict[str, Any], list[str], dict[str, Any] | None, float]:
     head_cls: Any = registry.get("head", config.head.name)
     train_i, val_i, test_i = (index_by_split[part] for part in PARTS)
     train, val, test = (_subset(matrix, rows) for rows in (train_i, val_i, test_i))
@@ -665,7 +665,7 @@ def _run_seed(
     test_pred = _predictions("test", windows, test_i, labels[test_i], best_head.predict(test))
     _write_predictions(rs.predictions_path(run_id, seed, root), [val_pred, test_pred], class_names)
     metrics = {"val": evaluate(val_pred, class_names), "test": evaluate(test_pred, class_names)}
-    return metrics, names, selection
+    return metrics, names, selection, float(best_score)
 
 
 def _direction(config: ExperimentConfig, splitter: str) -> str | None:
@@ -794,11 +794,14 @@ def _execute(
         seed_selection: dict[int, dict] = {
             seed: rec["selection"] for seed, rec in previous.items() if "selection" in rec
         }
+        seed_tuning: dict[int, float] = {
+            seed: rec[rs.TUNING_SCORE] for seed, rec in previous.items() if rs.TUNING_SCORE in rec
+        }
         stage = time.monotonic()
         with joblib.parallel_config(n_jobs=workers):
             for seed in todo:
                 _seed_everything(seed)
-                fresh[seed], seed_names[seed], chosen = _run_seed(
+                fresh[seed], seed_names[seed], chosen, seed_tuning[seed] = _run_seed(
                     config,
                     seed,
                     matrix,
@@ -819,7 +822,7 @@ def _execute(
             for seed in config.seeds
         }
 
-        document = rs.metrics_document(per_seed, seed_names, seed_selection)
+        document = rs.metrics_document(per_seed, seed_names, seed_selection, seed_tuning)
         stage = time.monotonic()
         document["intervals"] = {"test": run_intervals(run_id, config.seeds, class_names, root)}
         log.info("stage test intervals: %.2fs", time.monotonic() - stage)

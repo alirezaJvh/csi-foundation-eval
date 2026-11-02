@@ -17,6 +17,7 @@ from csi_bench.core.splitplan import PARTS, find_split, load_split_plan
 from csi_bench.runner.discover import discover
 from csi_bench.runner.migrate import migrate_runs
 from csi_bench.runner.report import DEFAULT_REFERENCE, report
+from csi_bench.runner.rescore import DEFAULT_BACKUP, rescore_report, rescore_runs
 from csi_bench.runner.run import run, run_sweep
 
 _COUNTS = ("n_packets", *PARTS)
@@ -143,6 +144,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         "confidence intervals from saved predictions",
     )
     m.add_argument("--runs", default="runs", help="results directory")
+    s = sub.add_parser(
+        "rescore-runs",
+        help="back up every old metrics.json, provenance.json and predictions file, then rerun "
+        "each run that has no tuning-stage val score",
+    )
+    s.add_argument("--runs", default="runs", help="results directory")
+    s.add_argument("--backup", default=DEFAULT_BACKUP, help="backup directory outside --runs")
+    s.add_argument(
+        "--workers",
+        help="worker processes/threads (default: $CSI_BENCH_WORKERS or min(4, CPU count))",
+    )
+    s.add_argument("--allow-dirty", action="store_true", help="run on a dirty tree (samples only)")
+    c = sub.add_parser(
+        "rescore-report",
+        help="compare the backup with the rescored store: changed cells, test mismatches, ids",
+    )
+    c.add_argument("--runs", default="runs", help="results directory")
+    c.add_argument("--backup", default=DEFAULT_BACKUP, help="backup directory outside --runs")
+    c.add_argument("--out", help="write the comparison here (default: stdout)")
+    c.add_argument(
+        "--allow-dirty", action="store_true", help="compare dirty runs and pass (samples only)"
+    )
     try:
         args = parser.parse_args(argv)
     except SystemExit as e:
@@ -153,6 +176,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_sweep(args.file, args.force, workers=args.workers)
     if args.command == "migrate-runs":
         return migrate_runs(args.runs)
+    if args.command == "rescore-runs":
+        return rescore_runs(
+            args.runs, args.backup, workers=args.workers, allow_dirty=args.allow_dirty
+        )
+    if args.command == "rescore-report":
+        return rescore_report(args.runs, args.backup, args.out, allow_dirty=args.allow_dirty)
     if args.command == "report":
         return report(args.runs, args.all_variants, args.include_dirty, args.reference)
     return describe(args.dataset, args.split)

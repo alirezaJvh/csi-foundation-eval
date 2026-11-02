@@ -11,6 +11,7 @@ from csi_bench.core import results_schema as rs
 from csi_bench.runner.cli import main
 
 ROOT = Path(__file__).resolve().parents[1]
+_SAME_AS_VAL = object()
 
 
 def _config(rooms, head="svm", extractor="amplitude_stats", fs=None, window=40, role="comparison"):
@@ -40,7 +41,9 @@ def _make_run(
     names=None,
     splitter="time_block",
     intervals=None,
+    tuning=_SAME_AS_VAL,
 ):
+    """`tuning` is the tuning-stage score, by default `val`; None makes an old run without it."""
     d = rs.new_run_dir(root, config["dataset"], splitter, rs.run_slug(config), run_id)
     d.mkdir(parents=True)
     rs.config_path(run_id, root).write_text(yaml.safe_dump(config))
@@ -51,6 +54,11 @@ def _make_run(
         json.dumps({"split_hash": split_hash, "git": {"dirty": dirty}})
     )
     seeds = {str(s): {"feature_names": names} if names else {} for s in (0, 1)}
+    tuning = val if tuning is _SAME_AS_VAL else tuning
+    tuning_val = {} if tuning is None else {"tuning_val": {"macro_f1": [tuning, 0.03]}}
+    for record in seeds.values():
+        if tuning is not None:
+            record["tuning_val_macro_f1"] = tuning
     rs.metrics_path(run_id, root).write_text(
         json.dumps(
             {
@@ -58,6 +66,7 @@ def _make_run(
                 "mean_std": {
                     "val": {"macro_f1": [val, 0.01], "accuracy": [val, 0.01]},
                     "test": {"macro_f1": [test, 0.02], "accuracy": [test + 0.01, 0.02]},
+                    **tuning_val,
                 },
                 **({"intervals": {"test": intervals}} if intervals else {}),
             }
@@ -96,10 +105,10 @@ def _report(root, capsys, *args):
     return code, cap.out, cap.err
 
 
-def test_table_picks_best_val_variant_and_refreshes_index(runs, capsys):
+def test_table_picks_best_tuning_variant_and_refreshes_index(runs, capsys):
     code, out, _ = _report(runs, capsys)
     assert code == 0
-    # bbb has the best val F1 for r1, so its test score (60.00) is shown, not aaa's (70.00)
+    # bbb has the best tuning-stage F1 for r1, so its test score (60.00) is shown, not aaa's (70.00)
     assert "F1 60.00 [-] acc 61.00 [-]" in out
     assert "70.00" not in out
     assert f"csi-bench run {rs.config_path('bbb', runs)}" in out
@@ -296,7 +305,7 @@ def test_leakage_block_random_minus_time_block(runs, capsys):
     leak = _leakage_lines(runs, capsys)
     assert any("random split" in line and "time-block split" in line for line in leak)
     r1 = next(line for line in leak if line.split()[:1] == ["amplitude_stats"] and " r1 " in line)
-    # bbb is the best-validation comparison run for r1: accuracy 0.61; reference 0.99
+    # bbb is the best tuning-stage comparison run for r1: accuracy 0.61; reference 0.99
     assert r1.split()[-4:] == ["99.00", "61.00", "+38.00", "99.41"]
     # no reference side: no difference and no published number
     r2 = next(line for line in leak if " r2 " in line)
@@ -456,4 +465,81 @@ def test_pooler_is_a_variant_axis_not_a_method(tmp_path, capsys):
     assert json.loads(variants["lw2"])["pooler"] == "mean_std"
     assert json.loads(variants["cls"]) == {"stride": 1, "window_len": 40}
     comparison = out[: out.index("All variants")]
-    assert "F1 62.00" in comparison and "F1 61.00" not in comparison  # best val wins
+    assert "F1 62.00" in comparison and "F1 61.00" not in comparison  # best tuning score wins
+
+
+def test_selection_uses_the_tuning_score_not_the_in_sample_val(tmp_path, capsys):
+    """Guard: fails if table or leakage selection reverts to the in-sample val score."""
+    root = tmp_path / "runs"
+    _make_run(root, "mem", _config(["r1"], window=20), 1.00, 0.61, tuning=0.70)  # memorises
+    _make_run(root, "hon", _config(["r1"], window=40), 0.90, 0.72, tuning=0.85)
+    ref = _config(["r1"], role="reference")
+    _make_run(
+        root, "rmem", ref, 1.00, 0.51, split_hash=WINDOW_PLAN, splitter="random_window", tuning=0.1
+    )
+    ref = _config(["r1"], role="reference", window=20)
+    _make_run(
+        root, "rhon", ref, 0.90, 0.92, split_hash=WINDOW_PLAN, splitter="random_window", tuning=0.2
+    )
+    code, out, _ = _report(
+        root, capsys, "--reference", str(ROOT / "experiments/published_reference.yaml")
+    )
+    assert code == 0
+    table, _, leak = out.partition("Leakage")
+    assert "F1 72.00" in table and "F1 61.00" not in table
+    assert "F1 92.00" in table and "F1 51.00" not in table
+    assert f"csi-bench run {rs.config_path('hon', root)}" in table
+    row = next(line for line in leak.splitlines() if " r1 " in line)
+    assert row.split()[-4:] == ["93.00", "73.00", "+20.00", "99.41"]
+
+
+def test_old_runs_are_excluded_and_counted(tmp_path, capsys):
+    root = tmp_path / "runs"
+    _make_run(root, "new", _config(["r1"], window=20), 0.5, 0.55)
+    _make_run(root, "old", _config(["r1"], window=40), 0.99, 0.99, tuning=None)
+    _make_run(root, "ol2", _config(["r2"]), 0.99, 0.98, tuning=None)
+    _make_run(root, "dty", _config(["r2"], window=20), 0.99, 0.97, tuning=None, dirty=True)
+    _make_run(root, "fld", _config(["r2"], window=30), 0, 0, status="failed")
+    code, out, err = _report(root, capsys)
+    assert code == 0
+    assert "F1 55.00" in out and "99.00" not in out and "98.00" not in out
+    assert "note: 2 done runs have no tuning-stage val score" in err
+    assert f"csi-bench rescore-runs --runs {root}" in err
+    index = pd.read_parquet(rs.index_path(root)).set_index("run_id")
+    assert index.loc["new", "tuning_val_macro_f1_mean"] == 0.5
+    assert index.loc["new", "tuning_val_macro_f1_std"] == 0.03
+    assert pd.isna(index.loc["old", "tuning_val_macro_f1_mean"])  # old runs still index
+    assert index.loc["old", "val_macro_f1_mean"] == 0.99
+    _, _, err = _report(root, capsys, "--include-dirty")
+    assert "note: 3 done runs" in err
+
+
+def test_only_old_runs_note_and_no_table(tmp_path, capsys):
+    root = tmp_path / "runs"
+    _make_run(root, "old", _config(["r1"]), 0.9, 0.9, tuning=None)
+    code, out, err = _report(root, capsys)
+    assert code == 0
+    assert out == "no finished runs to report\n"
+    assert "note: 1 done runs" in err and "rescore-runs" in err
+
+
+def test_no_exclusion_note_when_every_run_has_the_score(runs, capsys):
+    _, _, err = _report(runs, capsys)
+    assert "rescore-runs" not in err
+
+
+def test_all_variants_shows_tuning_score_and_labels_val_in_sample(tmp_path, capsys):
+    root = tmp_path / "runs"
+    _make_run(root, "aaa", _config(["r1"]), 0.9, 0.5, tuning=0.7)
+    _, out, _ = _report(root, capsys, "--all-variants")
+    assert "tuning val F1" in out and "val F1 (in-sample)" in out
+    assert ["70.00±3.00", "90.00±1.00", "50.00±2.00"] == out.splitlines()[-1].split()[-6:-3]
+    assert "best tuning-stage val F1" in out
+
+
+def test_notebook_selects_on_the_tuning_score():
+    source = json.loads((ROOT / "notebooks/01_classical_overview.ipynb").read_text())
+    code = "".join("".join(c["source"]) for c in source["cells"] if c["cell_type"] == "code")
+    assert "val_macro_f1_mean.idxmax" not in code.replace("tuning_val_macro_f1_mean.idxmax", "")
+    assert "tuning_val_macro_f1_mean.idxmax" in code
+    assert 'dropna(subset=["tuning_val_macro_f1_mean"])' in code

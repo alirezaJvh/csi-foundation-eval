@@ -37,6 +37,35 @@ def test_mean_std_single_seed_has_zero_std():
     assert doc["mean_std"]["val"]["accuracy"] == pytest.approx([0.8, 0.0])
 
 
+def _two_seeds():
+    return {
+        0: {"val": _metrics("val", 0.5, 0.4), "test": _metrics("test", 0.6, 0.5)},
+        1: {"val": _metrics("val", 0.7, 0.6), "test": _metrics("test", 0.6, 0.5)},
+    }
+
+
+def test_document_holds_the_tuning_score_per_seed_and_its_mean_std():
+    doc = rs.metrics_document(_two_seeds(), tuning_val={0: 0.7, 1: 0.9})
+    assert doc["seeds"]["0"]["tuning_val_macro_f1"] == 0.7
+    assert doc["seeds"]["1"]["tuning_val_macro_f1"] == 0.9
+    assert doc["mean_std"]["tuning_val"] == {"macro_f1": pytest.approx([0.8, 0.1])}
+    assert doc["mean_std"]["val"]["macro_f1"] == pytest.approx([0.5, 0.1])  # in-sample stays
+    assert rs.TUNING_VAL not in rs.SPLIT_NAMES
+
+
+def test_document_without_a_score_for_every_seed_has_no_mean_std():
+    doc = rs.metrics_document(_two_seeds(), tuning_val={1: 0.9})
+    assert "tuning_val" not in doc["mean_std"]
+    assert "tuning_val_macro_f1" not in doc["seeds"]["0"]
+    assert doc["seeds"]["1"]["tuning_val_macro_f1"] == 0.9
+    assert "tuning_val" not in rs.metrics_document(_two_seeds())["mean_std"]
+
+
+def test_index_schema_has_the_tuning_columns():
+    names = rs.INDEX_TABLE_SCHEMA.names
+    assert {"tuning_val_macro_f1_mean", "tuning_val_macro_f1_std"} <= set(names)
+
+
 def test_metrics_round_trip():
     from csi_bench.core.contracts import Metrics
 
