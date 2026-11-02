@@ -10,6 +10,8 @@ Let the researcher rerun the whole study (classical baselines, LWM and later the
 
 - Story 6.1: Padova 80 MHz loader
 - Story 6.2: CSI-Bench loader
+- Story 6.3: Padova cross-room baseline
+- Story 6.4: Padova SHARP-comparable run
 
 ## Requirements & Constraints
 
@@ -22,7 +24,7 @@ Let the researcher rerun the whole study (classical baselines, LWM and later the
 - **Rate.** Recordings are used at their saved rate, with no resampling in later stages. Any resampling or cleaning is a `DatasetSource` option (e.g. `equalize_rate`).
 - **No leakage.** Same splitters, windows, metrics and test-once rule as every other dataset. Results are reported per `(dataset, splitter)` and never mixed in one table.
 - **Data location.** Padova data lives in `data/padova/`, which is git-ignored. Do not commit raw data.
-- **Sources.** Padova: IEEE DataPort "CSI dataset for wireless human sensing on 80 MHz Wi-Fi channels", paper arXiv 2305.03170, code github.com/francescamen/SHARP (Asus RT-AC86U, Nexmon, 802.11ac 80 MHz). CSI-Bench: NeurIPS 2025 Datasets & Benchmarks, large and multi-device, possibly amplitude-only.
+- **Sources.** Padova: SHARP paper (arXiv 2103.09924), code github.com/francescamen/SHARP (Asus RT-AC86U, Nexmon, 802.11ac 80 MHz). Source of the S1–S7 files in `data/padova/`: SHARP (Meneghello et al., IEEE TMC 2022, doi 10.1109/TMC.2022.3185681, arXiv 2103.09924), based on the file layout matching its Table 1; the download source is unconfirmed. arXiv 2305.03170 describes a related, larger dataset that is not the one loaded. CSI-Bench: NeurIPS 2025 Datasets & Benchmarks, large and multi-device. Its H5 files are amplitude-only; `Multitask/sub_Human_mat` holds complex CSI.
 
 ## Technical Decisions
 

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-07-2026 09:00
-last_updated: 2026-10-28
+last_updated: 2026-11-02
 project: master
 project_key: NOKEY
 tracking_system: file-system
@@ -62,11 +62,13 @@ development_status:
   epic-3-retrospective: optional
 
   # Epics 4-7 renumbered 2026-10-11 so numbers follow execution order (sprint-change-proposal-2026-10-11)
+  # Remaining order 2026-11-02 (sprint-change-proposal-2026-11-02): 4.5, 6.3, 6.4, 6.2, Epic 7
   epic-4: in-progress
   4-1-readable-run-layout-and-report-section-per-protocol: done
   4-2-room-holdout-splitter: done
   4-3-confidence-intervals-from-a-recording-bootstrap: done
   4-4-cross-room-classical-baseline: done
+  4-5-honest-validation-score-for-selection: backlog
   epic-4-retrospective: optional
 
   epic-5: in-progress
@@ -78,6 +80,8 @@ development_status:
   epic-6: in-progress
   6-1-padova-80-mhz-loader: done
   6-2-csi-bench-loader: backlog
+  6-3-padova-cross-room-baseline: backlog
+  6-4-padova-sharp-comparable-run: backlog
   epic-6-retrospective: optional
 
   epic-7: backlog

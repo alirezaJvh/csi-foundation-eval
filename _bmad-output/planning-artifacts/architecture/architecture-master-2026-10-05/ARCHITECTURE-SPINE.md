@@ -222,6 +222,7 @@ flowchart TB
   - Feature scaling is fitted inside the head.
   - Test windows are predicted once, after the head is fitted.
   - A single `Evaluator` (pure functions in `core`) computes accuracy, macro-F1, per-class scores and the confusion matrix for both `val` and `test`.
+  - Variant selection uses the tuning-stage val score: the val macro-F1 of the chosen candidate, fitted on train only. The val metrics of the refitted model are in-sample diagnostics and never select anything.
   - The `Evaluator` also computes a 95% confidence interval for test accuracy and macro-F1, by bootstrap over **test recordings**, stratified by class. It is a pure function with a fixed resampling seed and `B` resamples.
     - The interval is stored in `metrics.json` with the point scores. It reflects which recordings ended up in test, which seeds cannot capture.
     - A class with only one test recording (r1 `empty`) adds no spread, and the report notes it.

@@ -24,7 +24,7 @@ FR2: A `describe` command reports, per recording, the packet count, and reports 
 FR3: Produce a time-block train/val/test split with a fixed gap between blocks (`gap_packets`, initially 64), saved as a committed split file and reproducible from it. [CAP-1, AD-6]
 FR4: Apply preprocessing as an ordered chain of switchable steps: antenna selection (2 = antennas [0,1], or all 4), global rescale, per-packet power normalization, phase sanitization and amplitude-only. Any statistics are fitted on train only. [preprocessing.md, AD-9]
 FR5: Cut windows of configurable length (in packets; standard sweep 1, 10, 30, 40, 50) and stride inside split blocks, identical for every method. [AD-7]
-FR6: Train the classifiers `logreg`, `svm`, `knn`, `random_forest` and `mlp`, choosing hyperparameters on val. Evaluate accuracy, macro-F1, per-class scores and the confusion matrix on val and on test, with mean ± std over seeds. [CAP-3, AD-11, AD-12]
+FR6: Train the classifiers `logreg`, `svm`, `knn`, `random_forest` and `mlp`, choosing hyperparameters on val. Evaluate accuracy, macro-F1, per-class scores and the confusion matrix on val and on test, with mean ± std over seeds. Also record the val macro-F1 of the chosen candidate before it is refitted on train ∪ val; this is the score used for selection. [CAP-3, AD-11, AD-12]
 FR7: Run experiments for room 1, room 2 and both rooms mixed as room selections over one shared split. [CAP-3, AD-17]
 FR8: Compute classical features in families with named columns: `paper_beamforming` (the paper's Doppler integral, CSI distance and flatness features, with the `norm` and `fix_distance_loop` params) and `amplitude_stats` (mean power, standard deviation, flatness, …). [CAP-4, AD-8]
 FR9: Feature selection: none, a manual subset (by column or family), or MRMR. It is fitted on train and tuned on val. Selected features are recorded per run and seed. [CAP-4, AD-18]
@@ -32,7 +32,7 @@ FR10: Define experiments in YAML or with a Python `ExperimentBuilder`; both prod
 FR11: A `sweep` command expands a sweep file into the Cartesian product of its options. It runs them one at a time, can resume, skips finished runs, and keeps going after a failure. [CAP-4, AD-14]
 FR12: A `report` command produces the comparison table:
 - Rows are methods and columns are room settings.
-- Each cell is the variant with the best val macro-F1, reported with its test score.
+- Each cell is the variant with the best tuning-stage val macro-F1 (from a model not trained on val), reported with its test score.
 - An all-variants view, the regeneration command for each row, and feature-selection stability are included.
 - The published numbers are shown next to reference rows.
 
@@ -150,6 +150,8 @@ The researcher can add WavesFM, Mantis-8M and an ImageNet model as rows in the s
 **FRs covered:** FR15
 
 **Execution order** (sprint-change-proposal-2026-10-11): Epic 4 → Epic 5 → Epic 6 → Epic 7, in number order. Epic 4 comes first because every later score uses it. Epic 6 comes before Epic 7 so the new models are scored on every verified dataset. Epics 4–7 were renumbered on 2026-10-11 so numbers follow execution order (old 7 → 4, old 4 → 5, old 5 → 7; Epic 6 kept its number).
+
+**Remaining order** (sprint-change-proposal-2026-11-02): Story 4.5 → Story 6.3 → Story 6.4 → Story 6.2 → Epic 7. Story 4.5 goes first so no further sweep is selected on the in-sample val score. Story 6.2 keeps its number, so here the numbers do not follow execution order.
 
 ## Epic 1: Reproducible dataset access
 
@@ -665,6 +667,35 @@ So that the first out-of-distribution numbers exist before the pretrained models
 **When** `sweep` and then `report` run
 **Then** the report shows the cross-room section next to the within-room one, with confidence intervals
 
+### Story 4.5: Honest validation score for selection
+
+As a researcher,
+I want variants selected on a validation score from a model that did not train on val,
+So that every comparison table picks its best variant fairly.
+
+**Acceptance Criteria:**
+
+**Given** a finished run
+**When** `metrics.json` is written
+**Then** it records the tuning-stage val macro-F1 (`head.val_score` of the chosen candidate) per seed, with its mean and std over seeds
+**And** the existing `val` metrics remain, documented as in-sample diagnostics of the refitted model
+
+**Given** the run index and `report`
+**When** the best variant per method and room setting is chosen, including for the leakage rows
+**Then** selection uses the tuning-stage score
+**And** a done run without that score is excluded, with a note giving how many were excluded and the command that fixes them
+
+**Given** a synthetic case where a memorising head wins on the in-sample val but loses on the tuning-stage score
+**When** `report` selects
+**Then** the head with the better tuning-stage score wins, and a test fails if selection reverts to the in-sample score
+
+**Given** the existing store
+**When** the 5,084 reported runs are rerun
+**Then** a copy of every old `metrics.json` is kept first, outside `runs/`, and no run or result is lost
+**And** run ids are unchanged, and each run's test metrics match the old ones, with any mismatch listed rather than ignored
+**And** a before/after table per `(dataset, splitter)` section shows every cell whose selected variant or score changed
+**And** `_bmad-output/reports/lwm-vs-classical.html` is regenerated
+
 ## Epic 5: LWM evaluation
 
 The researcher can embed every packet with frozen LWM (2/4 antennas, preprocessing, embedding type, pooling, window variants) and get LWM rows in the same table. Story 5.1 needs only Epic 1; scoring needs Epic 2.
@@ -738,7 +769,7 @@ So that LWM gets rows in the same table.
 
 ## Epic 6: Public datasets (activity recognition)
 
-The researcher can rerun the study on the supervisor-verified activity-recognition datasets (verified 2026-10-08) by adding only their loaders. Padova 80 MHz comes first, as the likely easiest import; CSI-Bench follows.
+The researcher can rerun the study on the supervisor-verified activity-recognition datasets (verified 2026-10-08) by adding only their loaders. Padova 80 MHz comes first, as the likely easiest import, followed by its cross-room and SHARP-comparable runs; CSI-Bench follows.
 
 ### Story 6.1: Padova 80 MHz loader
 
@@ -784,6 +815,51 @@ So that the study covers a large multi-device benchmark too.
 **When** only its `dataset` field is changed
 **Then** the sweep runs on CSI-Bench and `report` shows a CSI-Bench section
 **And** `git diff` shows no change outside `adapters/datasets/`, `splits/` and `experiments/`
+
+**Format confirmed 2026-11-02 (recorded here so the story does not stop on its rule).** Use `Multitask/sub_Human_mat/` (`csi_trace.csi`, complex128, `[tx, rx, subcarriers, packets]`, plus `mactimer`). The H5 files are amplitude-only and are not used. There are 1,778 HAR files, 5 classes (`walking-case1`–`4` merge into `walking`), environments E01–E06 and E27 as rooms, and no empty class. No file has non-finite values, all-zero packets or all-zero subcarriers. Scope for this story: the HP devices (438 files, 2×2×58, about 122 Hz), using `tx0` with `rx0` and `rx1` as antennas `[0, 1]`, as adapter `csi_bench_hp`. The 1×4×14 devices are a later, separate adapter. Exclude `EightreePlug` (bursty timing) and the 6 files under 1,000 packets. Do not use `mactimer` for timing. The story must confirm the antenna pairing across more than the one file sampled so far, and check whether `paper_beamforming`, `amplitude_stats` and LWM accept 58 subcarriers.
+
+### Story 6.3: Padova cross-room baseline
+
+As a researcher,
+I want Padova scored across environments,
+So that the supervisor's same-room question has a measured answer and the result is comparable to SHARP's S6 and S7 tests.
+
+**Acceptance Criteria:**
+
+**Given** the `padova` adapter
+**When** `room_holdout` plans are generated
+**Then** the plans `bedroom→living_room` and `bedroom→laboratory` are committed under `splits/padova/`, with validation from the train room only
+
+**Given** `experiments/padova_cross_room.yaml`, using the Padova baseline grid with `stride: 9` (72 runs per direction, 144 in total)
+**When** `sweep` and then `report` run
+**Then** a `padova / room_holdout` section appears with one column per direction and confidence intervals
+**And** `git diff` shows no change outside `splits/` and `experiments/`
+
+**And** the report states that this protocol trains on the whole bedroom (S1–S5), whereas SHARP trains on S1 only
+
+### Story 6.4: Padova SHARP-comparable run
+
+As a researcher,
+I want classical results on Padova under SHARP's closest protocol,
+So that the gap to the paper is measured against its class set, data subset and window length.
+
+**Acceptance Criteria:**
+
+**Given** the `padova` adapter module
+**When** a second dataset `padova_sharp` is registered in `adapters/datasets/padova.py`, sharing its loading code
+**Then** it loads only the S1 sets, and its classes are `empty, sitting, walking, running, jumping`
+**And** it passes the `DatasetSource` contract test, has its own committed `time_block` split (0.6/0.2/0.2), and works with `describe`
+**And** its results appear in their own report section, separate from `padova`
+
+**Given** `experiments/padova_sharp.yaml`
+**When** `sweep` runs
+**Then** it covers `window_len` 346 (about 2 s) as well as the 20–50 packet windows, with the existing feature families and heads
+**And** `amplitude_stats` also runs on all 4 antennas, while `paper_beamforming` stays on 2 antennas because it requires exactly 2
+
+**Given** the results
+**When** the story closes
+**Then** the spec records, next to SHARP's S1 number, how much of the gap each change closed (class set, data subset, window length)
+**And** it records whether a Doppler family is worth proposing
 
 ## Epic 7: Other pretrained models
 
