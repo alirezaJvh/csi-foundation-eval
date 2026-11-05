@@ -150,3 +150,8 @@
 - `provenance.runtime.deterministic` is `true` although only torch's threads are pinned (`src/csi_bench/runner/run.py`), so it overstates what is controlled.
 - `csi-bench report` shows every Padova comparison cell as `-`: `_comparison` defaults its columns to `rs.ROOM_SETTINGS` (`r1`, `r2`, `mixed`), but Padova's rooms are `bedroom`, `laboratory` and `living_room` (`src/csi_bench/runner/report.py`). The per-method commands printed under the table are right. Padova results stayed readable only through the hosted page and `rescore-4-5.md`.
 - `_bmad-output/reports/lwm-vs-classical.html` still shows the old selection, because the rescored report was published as a hosted page instead. Replace or remove it if the local file should stay current.
+
+## Deferred from: code review of spec-6-2-padova-cross-room-baseline.md (2026-11-05)
+
+- The Padova `time_block` `-` cells, logged above, now block Story 6.2's reading too: `report` gives no same-room number beside the cross-room columns (`src/csi_bench/runner/report.py:421`). Any comparison must also state that the `b6010d87ce4d` baseline trains on fractions 0.6/0.2/0.2, against 0.75/0.25 for the holdout plans.
+- Repo-wide verification does not pass as Story 6.2's spec expects: `ruff check` has 3 errors in `notebooks/01_classical_overview.ipynb`, `ruff format --check` flags 1 file and `ty check` has 10 diagnostics, including the errors already logged for `tests/test_sweep.py:331`. The three test files this story changes pass `ruff`, and none of the `ty` diagnostics are in lines it touches.

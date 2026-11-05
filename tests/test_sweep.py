@@ -7,9 +7,11 @@ from csi_bench.config.experiment import compute_run_id
 from csi_bench.config.sweep import _set_path, expand_sweep
 from csi_bench.core import results_schema as rs
 from csi_bench.core.errors import ConfigError
+from csi_bench.core.splitplan import check_split_rooms, find_split, read_plan_params
 from csi_bench.runner import run as run_module
 from csi_bench.runner.cli import main
 from csi_bench.runner.discover import discover
+from csi_bench.runner.report import _room_column
 from tests.test_run import (  # noqa: F401 - fixture re-export
     CONFIG,
     ROOT,
@@ -424,6 +426,36 @@ def test_padova_sweep_expands(monkeypatch):
         ("laboratory",),
         ("living_room",),
     ]
+
+
+def test_padova_cross_room_sweep_expands(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    raw = yaml.safe_load((ROOT / "experiments/padova_cross_room.yaml").read_text())
+    baseline = yaml.safe_load((ROOT / "experiments/padova_classical_baseline.yaml").read_text())
+    assert {k: v for k, v in raw["sweep"].items() if k != "@direction"} == {
+        k: v for k, v in baseline["sweep"].items() if k != "selection.rooms"
+    }
+    configs = [c for _, c in expand_sweep(raw, "padova_cross_room")]
+    assert len({compute_run_id(c) for c in configs}) == len(configs) == 144
+    rooms = {"725a12be6b83": "living_room", "99d235eb2f0e": "laboratory"}
+    for split, test_room in rooms.items():
+        plan = find_split("padova", split)
+        params = read_plan_params(plan)
+        assert plan.is_file()
+        assert (params["train_rooms"], params["test_rooms"]) == (["bedroom"], [test_room])
+        cells = [c for c in configs if c.split == split]
+        assert len(cells) == 72
+        for c in cells:
+            assert c.selection.rooms == ["bedroom", test_room]
+            assert (c.dataset, c.stride, c.role, c.seeds) == ("padova", 9, "comparison", [0])
+            assert [(s.name, s.params) for s in c.preprocessing] == [("antennas", {"ids": [0, 1]})]
+            check_split_rooms("room_holdout", params, c.selection.rooms, c.role)
+            column = _room_column(c.model_dump(mode="json"), "padova", "room_holdout", "splits")
+            assert column == f"bedroom→{test_room}"
+        with pytest.raises(ConfigError, match="must equal"):
+            check_split_rooms("room_holdout", params, ["bedroom"], "comparison")
+    assert find_split("padova").stem == "b6010d87ce4d"  # an implicit split stays the block plan
 
 
 def test_lwm_sweep_expands(monkeypatch):

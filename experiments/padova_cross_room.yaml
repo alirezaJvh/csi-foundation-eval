@@ -1,0 +1,38 @@
+# Padova cross-room baseline (strict OOD): train on the bedroom, test on another room, under two
+# committed room_holdout plans (725a12be6b83 = bedroom→living_room, 99d235eb2f0e =
+# bedroom→laboratory). Validation uses the bedroom only; nothing is fitted on or selected with the
+# test room, so there is no oracle-selection row.
+# Grid: padova_classical_baseline.yaml without its room axis: 4 windows x 3 feature sets x
+# 2 selection x 3 heads = 72 runs per direction, 144 in total.
+# Stride rule: padova uses stride 9 (one window start about every 50 ms at 173 Hz). Stride is not tuned.
+# Not SHARP's protocol: this trains on the whole bedroom (S1-S5) with all 8 classes, whereas SHARP
+# trains on S1 only with 5 classes. Story 6.3 covers the closer comparison.
+# Not a pure room effect: sets differ in day and person, so each direction changes those along with
+# the room, and S4 and S5 train with a bookcase blocking the direct path.
+# Both plans have identical train and val blocks, so the direction columns share one bedroom
+# training set and are not independent selections.
+# `split` and `selection.rooms` are paired: selection.rooms must equal train_rooms + test_rooms.
+dataset: padova
+selection: {rooms: [bedroom, living_room]}
+split: "725a12be6b83"
+preprocessing: [ant2]
+window_len: 40
+stride: 9
+extractors: [{name: amplitude_stats}]
+feature_selection: null
+head: {name: svm}
+seeds: [0]
+role: comparison
+sweep:
+  window_len: [20, 30, 40, 50]
+  extractors:
+    - [{name: amplitude_stats}]
+    - [{name: paper_beamforming}]
+    - [{name: amplitude_stats}, {name: paper_beamforming}]
+  feature_selection:
+    - null
+    - {mrmr: {k: [2, 3]}}
+  head.name: [svm, knn, random_forest]
+  "@direction":
+    - {split: "725a12be6b83", selection.rooms: [bedroom, living_room]}
+    - {split: "99d235eb2f0e", selection.rooms: [bedroom, laboratory]}

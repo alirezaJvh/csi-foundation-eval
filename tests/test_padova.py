@@ -1,4 +1,5 @@
 import os
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -7,6 +8,7 @@ from scipy.io import savemat
 
 from csi_bench.adapters.datasets import padova
 from csi_bench.adapters.datasets.padova import Padova
+from csi_bench.adapters.splitters.room_holdout import RoomHoldout
 from csi_bench.adapters.splitters.time_block import TimeBlock
 from csi_bench.core.errors import DataError
 from csi_bench.core.splitplan import load_split_plan
@@ -58,6 +60,37 @@ def test_real_dataset():
     committed = COMMITTED / f"{plan.split_hash}.json"
     assert committed.is_file(), f"generate with write_split_plan: {committed}"
     assert load_split_plan(committed, recs) == plan
+
+
+@pytest.mark.skipif(not (REAL / "S1a").is_dir(), reason="dataset not present")
+@pytest.mark.parametrize(
+    ("test_room", "split_hash", "single_recording"),
+    [
+        ("living_room", "725a12be6b83", {"arm_gym", "sit_stand", "standing"}),
+        (
+            "laboratory",
+            "99d235eb2f0e",
+            {"empty", "walking", "running", "standing", "sit_stand", "arm_gym"},
+        ),
+    ],
+)
+def test_real_room_holdout_plan(test_room, split_hash, single_recording):
+    recs = Padova(Padova.Params(root=str(REAL))).load()
+    params = RoomHoldout.Params(train_rooms=["bedroom"], test_rooms=[test_room])
+    plan = RoomHoldout(params).split(recs, "padova")
+    assert plan.split_hash == split_hash
+    assert load_split_plan(COMMITTED / f"{split_hash}.json", recs) == plan
+    for r in recs:
+        blocks = plan.blocks[r.recording_id]
+        if r.room == "bedroom":
+            assert blocks["train"] != (0, 0) and blocks["val"] != (0, 0)
+            assert blocks["test"] == (0, 0)
+        elif r.room == test_room:
+            assert blocks == {"train": (0, 0), "val": (0, 0), "test": (0, r.meta.n_packets)}
+        else:
+            assert set(blocks.values()) == {(0, 0)}
+    counts = Counter(padova.CLASSES[r.label] for r in recs if r.room == test_room)
+    assert {name for name, n in counts.items() if n == 1} == single_recording
 
 
 def test_conversion_matches_hand_built(tmp_path):

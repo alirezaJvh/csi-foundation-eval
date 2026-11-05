@@ -166,9 +166,11 @@ def test_committed_plans_are_consistent():
             if plan.splitter != ROOM_HOLDOUT:
                 assert all(s < e for s, e in spans)  # only room_holdout has empty parts
             filled = [span for span in spans if span[0] < span[1]]
-            assert filled
             for (_, prev_end), (next_start, _) in zip(filled, filled[1:], strict=False):
                 assert next_start - prev_end >= plan.gap_packets
+        # a room_holdout plan leaves recordings of rooms outside it all empty, but no whole part
+        for part in ("train", "val", "test"):
+            assert any(b[part][0] < b[part][1] for b in plan.blocks.values())
 
 
 @pytest.fixture
