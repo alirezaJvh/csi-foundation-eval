@@ -2,7 +2,7 @@
 title: 'Honest validation score for selection'
 type: 'bugfix'
 created: '2026-11-02'
-status: 'in-progress'
+status: 'done'
 baseline_commit: '1441d521a3ee965bc160b1c5d150b78b29aa5d50'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -63,7 +63,7 @@ context:
 - [x] `src/csi_bench/runner/rescore.py`, `src/csi_bench/runner/cli.py` -- backup, rerun, comparison commands -- AC3
 - [x] `tests/test_report.py`, `tests/test_run.py`, `tests/test_results_schema.py`, `tests/test_rescore.py` (new) -- matrix cases, including the guard that fails if selection reverts -- coverage
 - [x] scratch copy of a stratified sample (each dataset, splitter, head, family) -- run `rescore-runs` and `rescore-report`; record seconds per run and test-metric matches in Implementation Notes -- required before the full rescore
-- [ ] real store, after the human commits -- `rescore-runs`, `rescore-report`, regenerate `_bmad-output/reports/lwm-vs-classical.html` -- not in this session, per the rescore timing decision
+- [x] real store, after the human commits -- `rescore-runs`, `rescore-report`, regenerate the report -- done 2026-11-05; the human chose a hosted page over the local HTML file, see "Full rescore" in Implementation Notes
 
 **Acceptance Criteria:**
 - Given a finished run, when `metrics.json` is written, then it has the per-seed score and its mean and std, and the `val` metrics are unchanged.
@@ -121,6 +121,20 @@ Rejected:
 **Code review skipped at the user's request (2026-11-02); nothing staged or committed.** The diff was read against the tasks and the I/O matrix: every matrix row has a passing test. The spec stays `in-progress` until the full rescore, the before/after table and the HTML are done.
 
 **After code review (2026-11-02).** 569 tests pass; ruff clean. A 3-run scratch copy (Padova knn, LWM logreg, amplitude svm) confirmed: dirty tree refused with exit 2, `--allow-dirty` run exit 0, strict `rescore-report` exit 1 on 3 dirty runs, `--allow-dirty` report exit 0, 0 test-metric mismatches. The 123-run sample was not repeated. The earlier note that code review was skipped no longer holds.
+
+**Full rescore (finished 2026-11-05, commit `2335ef9`).** `rescore-runs` with 4 workers: 5,084 rerun, 0 failed. `rescore-report` wrote `_bmad-output/reports/rescore-4-5.md` and exits 1, only because of the mismatches below: 5,084 runs before and after, 0 ids differ, 0 runs without the score, 0 dirty, 234 test-metric mismatches, 68 of 172 cells changed.
+
+**Decision (2026-11-05, human): keep the new scores and accept the 234 mismatches as a known limitation.** The story is done even though `rescore-report` keeps exiting 1. Old metrics and predictions stay in `results/metrics-before-4-5/`.
+- Where: only `lwm` heads, `mlp` 164 of 900 and `logreg` 70 of 900. No `knn`, `random_forest` or `svm` run differs, on any feature set.
+- Size: mean test macro-F1 moved by -0.108 to +0.198 on the 0–1 scale; median change 0.0062 for `logreg` and 0.0036 for `mlp`; 43 runs changed by 0.01–0.05, 15 by 0.05–0.1, 3 by 0.1 or more. Up and down are balanced (118 and 116).
+- Effect: none of the 172 cell picks is a mismatched run. 3 mismatched runs sit in the tied sets the report's "typical" medians use.
+- Ruled out from saved files, with no rerun: code (`head_search.py`, heads and extractors unchanged since `12db35a`), packages, preprocessing and feature cache keys (identical in all 1,800 `lwm` `mlp` and `logreg` runs), a feature-specific cause (the two heads mismatch together on 9 feature sets, against 12.8 expected by chance), seeds (`random_state` is fixed) and, for `logreg`, non-convergence (0 of 73 runs with warnings mismatch).
+- Likely cause, not confirmed: floating-point differences in iterative fits under different BLAS thread counts, which for the larger changes may flip the tuned candidate. OpenBLAS is unpinned and only torch threads are capped. The old runs did not save their worker count, thread count or chosen candidate, and confirming it needs a rerun. The 123-run sample found 0 mismatches and did not catch this.
+
+**Report.** At the human's request the new report is a hosted page, not a new local file: https://claude.ai/artifact/7NTaCqS6FyTXeqeuBSQkQ2. `_bmad-output/reports/lwm-vs-classical.html` is unchanged and still shows the old selection (commit `89bb430`). The page's "before" values come from the backup and reproduce the old report's typical medians and tie counts. It adds Padova and ranks its tables by tuning score, where the old report ranked by test.
+- Conclusions changed: within a room LWM still leads, with the gap down from 2.70–8.03 points to 0.29–1.53. Across rooms, classical at about twice LWM now holds only for r1→r2 (52.36 vs 22.56); on r2→r1 both are below chance (22.53 vs 14.96, chance 25). Most "after" classical values are one run where "before" was a median of ties, so they swing more.
+
+**Notebook.** `notebooks/01_classical_overview.ipynb` re-executed with no errors after `report` rebuilt the index (`uv run --no-sync --with nbconvert jupyter nbconvert --to notebook --execute --inplace`). nbconvert was not added to the project.
 
 ## Spec Change Log
 

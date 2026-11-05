@@ -143,3 +143,10 @@
 - `rescore-report` does not show each side's deciding score or a test-score delta, and has no leakage before/after (`src/csi_bench/runner/rescore.py` `_changed_cells`). Can be added after the rescore from the backup, with no rerun.
 - `rescore-report` does not check `val` metrics or the score against the old `selection` score (`src/csi_bench/runner/rescore.py` `_test_differences`). Can be added after the rescore from the backup, with no rerun.
 - Notebook `notebooks/01_classical_overview.ipynb`: saved output is stale, its test only matches source text, a stale index raises `KeyError`, and a part-way rescore plots nothing without a message. Re-execute after the rescore; `csi-bench report` clears the `KeyError`.
+
+## Deferred from: the full rescore of spec-4-5-honest-validation-score-for-selection.md (2026-11-05)
+
+- 234 `lwm` `mlp` and `logreg` runs did not reproduce their test metrics on rerun, and the cause is not confirmed (see the spec's Implementation Notes). Pin BLAS threads for head fits, save the worker count, thread count and chosen candidate in each run, and rerun a few mismatched runs at different worker counts to confirm. Worth settling before the Story 6.3 sweep, which fits heads the same way. `rescore-report` keeps exiting 1 on the real store until then.
+- `provenance.runtime.deterministic` is `true` although only torch's threads are pinned (`src/csi_bench/runner/run.py`), so it overstates what is controlled.
+- `csi-bench report` shows every Padova comparison cell as `-`: `_comparison` defaults its columns to `rs.ROOM_SETTINGS` (`r1`, `r2`, `mixed`), but Padova's rooms are `bedroom`, `laboratory` and `living_room` (`src/csi_bench/runner/report.py`). The per-method commands printed under the table are right. Padova results stayed readable only through the hosted page and `rescore-4-5.md`.
+- `_bmad-output/reports/lwm-vs-classical.html` still shows the old selection, because the rescored report was published as a hosted page instead. Replace or remove it if the local file should stay current.
