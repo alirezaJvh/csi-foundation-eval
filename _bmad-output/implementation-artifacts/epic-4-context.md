@@ -47,6 +47,6 @@ Let the researcher score any method across rooms (train on one room, test on the
 - 4.1 came first: its layout and report sections let cross-room runs (4.2) and later datasets share one store.
 - 4.3 backfills intervals for all runs in the migrated layout. 4.4 depends on 4.1–4.3.
 - 4.5 changes selection for every section built by 4.1–4.4, so the cross-room and within-room tables may change after its rescore.
-- Remaining order is 4.5, then 6.3, 6.4, 6.2, then Epic 7. Epic 5 and earlier tables need no code change beyond 4.5, but their selected variants may change; Epic 7 inherits the fix.
+- Remaining order is 4.5, then 6.2, 6.3, 6.4, then Epic 7. Epic 5 and earlier tables need no code change beyond 4.5, but their selected variants may change; Epic 7 inherits the fix.
 - Padova numbers already quoted to the supervisor stay provisional until 4.5 is done.
-- Epic 6 datasets map environments to `room`, so `room_holdout` gives cross-environment tests with no splitter code (Story 6.3 commits plans under `splits/padova/`). Story 7.4 reports every `(dataset, protocol)` section.
+- Epic 6 datasets map environments to `room`, so `room_holdout` gives cross-environment tests with no splitter code (Story 6.2 commits plans under `splits/padova/`). Story 7.4 reports every `(dataset, protocol)` section.

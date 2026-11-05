@@ -9,9 +9,9 @@ Let the researcher rerun the whole study (classical baselines, LWM and later the
 ## Stories
 
 - Story 6.1: Padova 80 MHz loader
-- Story 6.2: CSI-Bench loader
-- Story 6.3: Padova cross-room baseline
-- Story 6.4: Padova SHARP-comparable run
+- Story 6.2: Padova cross-room baseline
+- Story 6.3: Padova SHARP-comparable run
+- Story 6.4: CSI-Bench loader
 
 ## Requirements & Constraints
 
@@ -19,7 +19,7 @@ Let the researcher rerun the whole study (classical baselines, LWM and later the
 - **Loader only.** Success means: switching only the `dataset:` field of the classical sweep runs it on the new dataset, `report` shows a section for that dataset, and `git diff` shows no change outside `adapters/datasets/`, `splits/` and `experiments/`.
 - **Contract fit.** A new adapter declares its own ordered class list, passes the `DatasetSource` contract test, gets its own committed `time_block` split, and works with `describe`.
 - **Environments map to `room`**, so `room_holdout` gives a cross-environment test with no extra code.
-- **Stop rule (CSI-Bench).** If the data is amplitude-only or otherwise cannot fill the complex-CSI `Recording` contract, the story stops and asks for a spine amendment. Do not work around the contract. A blocked 6.2 may be deferred without holding up Epic 7.
+- **Stop rule (CSI-Bench).** If the data is amplitude-only or otherwise cannot fill the complex-CSI `Recording` contract, the story stops and asks for a spine amendment. Do not work around the contract. A blocked 6.4 may be deferred without holding up Epic 7.
 - **No label mapping across datasets** in this phase. Zero-shot cross-dataset transfer and people counting (WiMANS, EHUNAM) are out of scope.
 - **Rate.** Recordings are used at their saved rate, with no resampling in later stages. Any resampling or cleaning is a `DatasetSource` option (e.g. `equalize_rate`).
 - **No leakage.** Same splitters, windows, metrics and test-once rule as every other dataset. Results are reported per `(dataset, splitter)` and never mixed in one table.
@@ -41,5 +41,5 @@ Let the researcher rerun the whole study (classical baselines, LWM and later the
 ## Cross-Story Dependencies
 
 - Both stories depend on Epics 1, 2 and 4: the `DatasetSource` contract test, `describe`, `time_block` and `room_holdout` splitters, the classical sweep, per-`(dataset, splitter)` report sections and bootstrap intervals. Epic 5 LWM configs are reused with only a `dataset:` change.
-- 6.2 follows 6.1 but has no code dependency on it.
+- 6.4 (CSI-Bench) follows 6.1 but has no code dependency on it.
 - Downstream: Story 7.4 runs the full comparison under `time_block` on every verified public dataset, so Epic 6 comes before Epic 7.

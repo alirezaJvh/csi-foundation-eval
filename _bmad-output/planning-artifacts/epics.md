@@ -151,7 +151,7 @@ The researcher can add WavesFM, Mantis-8M and an ImageNet model as rows in the s
 
 **Execution order** (sprint-change-proposal-2026-10-11): Epic 4 → Epic 5 → Epic 6 → Epic 7, in number order. Epic 4 comes first because every later score uses it. Epic 6 comes before Epic 7 so the new models are scored on every verified dataset. Epics 4–7 were renumbered on 2026-10-11 so numbers follow execution order (old 7 → 4, old 4 → 5, old 5 → 7; Epic 6 kept its number).
 
-**Remaining order** (sprint-change-proposal-2026-11-02): Story 4.5 → Story 6.3 → Story 6.4 → Story 6.2 → Epic 7. Story 4.5 goes first so no further sweep is selected on the in-sample val score. Story 6.2 keeps its number, so here the numbers do not follow execution order.
+**Remaining order** (sprint-change-proposal-2026-11-02): Story 4.5 → Story 6.2 → Story 6.3 → Story 6.4 → Epic 7. Story 4.5 goes first so no further sweep is selected on the in-sample val score. The Epic 6 stories were renumbered on 2026-11-05 so numbers follow execution order (old 6.3 → 6.2, old 6.4 → 6.3, old 6.2 → 6.4); that proposal still uses the old numbers.
 
 ## Epic 1: Reproducible dataset access
 
@@ -794,31 +794,7 @@ So that the whole study can be repeated on independent data from the same hardwa
 **Then** the sweep runs on Padova and `report` shows a Padova section
 **And** `git diff` shows no change outside `adapters/datasets/`, `splits/` and `experiments/`
 
-### Story 6.2: CSI-Bench loader
-
-As a researcher,
-I want a loader for the CSI-Bench activity-recognition data,
-So that the study covers a large multi-device benchmark too.
-
-**Acceptance Criteria:**
-
-**Given** the downloaded dataset
-**When** the story starts
-**Then** its format, class list and recording layout are confirmed and recorded in the story spec
-**And** if the data is amplitude-only or otherwise does not fit the `Recording` contract (complex CSI, AD-4), the story stops and asks for a spine amendment instead of working around the contract
-
-**Given** the confirmed format
-**When** a new `DatasetSource` adapter is added
-**Then** it declares its own class list, passes the `DatasetSource` contract test, gets its own committed `time_block` split, and `describe` works for it
-
-**Given** the classical sweep
-**When** only its `dataset` field is changed
-**Then** the sweep runs on CSI-Bench and `report` shows a CSI-Bench section
-**And** `git diff` shows no change outside `adapters/datasets/`, `splits/` and `experiments/`
-
-**Format confirmed 2026-11-02 (recorded here so the story does not stop on its rule).** Use `Multitask/sub_Human_mat/` (`csi_trace.csi`, complex128, `[tx, rx, subcarriers, packets]`, plus `mactimer`). The H5 files are amplitude-only and are not used. There are 1,778 HAR files, 5 classes (`walking-case1`–`4` merge into `walking`), environments E01–E06 and E27 as rooms, and no empty class. No file has non-finite values, all-zero packets or all-zero subcarriers. Scope for this story: the HP devices (438 files, 2×2×58, about 122 Hz), using `tx0` with `rx0` and `rx1` as antennas `[0, 1]`, as adapter `csi_bench_hp`. The 1×4×14 devices are a later, separate adapter. Exclude `EightreePlug` (bursty timing) and the 6 files under 1,000 packets. Do not use `mactimer` for timing. The story must confirm the antenna pairing across more than the one file sampled so far, and check whether `paper_beamforming`, `amplitude_stats` and LWM accept 58 subcarriers.
-
-### Story 6.3: Padova cross-room baseline
+### Story 6.2: Padova cross-room baseline
 
 As a researcher,
 I want Padova scored across environments,
@@ -837,7 +813,7 @@ So that the supervisor's same-room question has a measured answer and the result
 
 **And** the report states that this protocol trains on the whole bedroom (S1–S5), whereas SHARP trains on S1 only
 
-### Story 6.4: Padova SHARP-comparable run
+### Story 6.3: Padova SHARP-comparable run
 
 As a researcher,
 I want classical results on Padova under SHARP's closest protocol,
@@ -860,6 +836,30 @@ So that the gap to the paper is measured against its class set, data subset and 
 **When** the story closes
 **Then** the spec records, next to SHARP's S1 number, how much of the gap each change closed (class set, data subset, window length)
 **And** it records whether a Doppler family is worth proposing
+
+### Story 6.4: CSI-Bench loader
+
+As a researcher,
+I want a loader for the CSI-Bench activity-recognition data,
+So that the study covers a large multi-device benchmark too.
+
+**Acceptance Criteria:**
+
+**Given** the downloaded dataset
+**When** the story starts
+**Then** its format, class list and recording layout are confirmed and recorded in the story spec
+**And** if the data is amplitude-only or otherwise does not fit the `Recording` contract (complex CSI, AD-4), the story stops and asks for a spine amendment instead of working around the contract
+
+**Given** the confirmed format
+**When** a new `DatasetSource` adapter is added
+**Then** it declares its own class list, passes the `DatasetSource` contract test, gets its own committed `time_block` split, and `describe` works for it
+
+**Given** the classical sweep
+**When** only its `dataset` field is changed
+**Then** the sweep runs on CSI-Bench and `report` shows a CSI-Bench section
+**And** `git diff` shows no change outside `adapters/datasets/`, `splits/` and `experiments/`
+
+**Format confirmed 2026-11-02 (recorded here so the story does not stop on its rule).** Use `Multitask/sub_Human_mat/` (`csi_trace.csi`, complex128, `[tx, rx, subcarriers, packets]`, plus `mactimer`). The H5 files are amplitude-only and are not used. There are 1,778 HAR files, 5 classes (`walking-case1`–`4` merge into `walking`), environments E01–E06 and E27 as rooms, and no empty class. No file has non-finite values, all-zero packets or all-zero subcarriers. Scope for this story: the HP devices (438 files, 2×2×58, about 122 Hz), using `tx0` with `rx0` and `rx1` as antennas `[0, 1]`, as adapter `csi_bench_hp`. The 1×4×14 devices are a later, separate adapter. Exclude `EightreePlug` (bursty timing) and the 6 files under 1,000 packets. Do not use `mactimer` for timing. The story must confirm the antenna pairing across more than the one file sampled so far, and check whether `paper_beamforming`, `amplitude_stats` and LWM accept 58 subcarriers.
 
 ## Epic 7: Other pretrained models
 
