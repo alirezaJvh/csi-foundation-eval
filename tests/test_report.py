@@ -402,6 +402,30 @@ def test_room_holdout_without_plan_falls_back_to_rooms(runs, tmp_path, capsys):
     assert {r["run_id"]: r["room_setting"] for r in rows}["x12"] == "mixed"
 
 
+def test_time_block_section_with_other_rooms_takes_columns_from_rows(runs, capsys):
+    for run_id, rooms, head, test in (
+        ("p1", ["bedroom"], "svm", 0.41),
+        ("p2", ["living_room"], "knn", 0.42),
+    ):
+        config = {**_config(rooms, head=head), "dataset": "padova_sharp"}
+        _make_run(runs, run_id, config, 0.9, test, split_hash="hp")
+    ref = {**_config(["bedroom"], head="logreg", role="reference"), "dataset": "padova_sharp"}
+    _make_run(runs, "p9", ref, 0.9, 0.43, split_hash="hp")
+    code, out, _ = _report(
+        runs, capsys, "--reference", str(ROOT / "experiments/published_reference.yaml")
+    )
+    assert code == 0
+    section = out[out.index("padova_sharp / time_block") : out.index("tor_vergata / ")]
+    headers = [line.split() for line in section.splitlines() if line.startswith("method")]
+    assert headers == [["method", "bedroom", "living_room"], ["method", "bedroom"]]
+    assert "F1 41.00 [-]" in section and "F1 42.00 [-]" in section
+    assert "published" not in section
+    tor = out[out.index("tor_vergata / time_block") :]
+    assert [line.split() for line in tor.splitlines() if line.startswith("method")] == [
+        ["method", "r1", "r2", "mixed"]
+    ]
+
+
 INTERVALS = {
     "accuracy": [0.6012, 0.6234],
     "macro_f1": [0.5871, 0.6129],

@@ -411,14 +411,19 @@ def _section(
     """The comparison and reference tables of one `(dataset, splitter)` section.
 
     A `room_holdout` section has one column per direction present (`r1→r2`, `r2→r1`) and no
-    published row; the others have the room columns `r1`, `r2`, `mixed`.
+    published row; the others have the room columns `r1`, `r2`, `mixed`, unless a row's room
+    setting is outside them (another dataset's rooms, e.g. `bedroom`): then one column per
+    setting present and no published row.
     """
     holdout = splitter == ROOM_HOLDOUT
     if holdout:
         published = None
 
     def columns(table: list[dict]) -> tuple[str, ...] | list[str]:
-        return sorted({r["room_setting"] for r in table}) if holdout else rs.ROOM_SETTINGS
+        settings = {r["room_setting"] for r in table}
+        if holdout or not settings <= set(rs.ROOM_SETTINGS):
+            return sorted(settings)
+        return rs.ROOM_SETTINGS
 
     comparison = [r for r in rows if r["role"] == "comparison"]
     reference = [r for r in rows if r["role"] == "reference"]
@@ -433,7 +438,9 @@ def _section(
             out += ["", "Feature-selection stability (fraction of selections)", ""] + stability
     if reference:
         out += ["", "Reference runs (not comparable to the table above)", ""]
-        out += _comparison(reference, root, published, columns(reference))
+        ref_columns = columns(reference)
+        ref_published = published if ref_columns == rs.ROOM_SETTINGS else None
+        out += _comparison(reference, root, ref_published, ref_columns)
         if all_variants:
             out += [""] + _variants(reference)
     return out[1:] if out[:1] == [""] else out

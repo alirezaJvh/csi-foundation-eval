@@ -7,7 +7,7 @@ import pytest
 from scipy.io import savemat
 
 from csi_bench.adapters.datasets import padova
-from csi_bench.adapters.datasets.padova import Padova
+from csi_bench.adapters.datasets.padova import Padova, PadovaS1, PadovaSharp
 from csi_bench.adapters.splitters.room_holdout import RoomHoldout
 from csi_bench.adapters.splitters.time_block import TimeBlock
 from csi_bench.core.errors import DataError
@@ -248,3 +248,80 @@ def test_corrupt_cache_is_rebuilt(tmp_path):
     (tmp_path / ".cache" / f"v{Padova.VERSION}" / f"{sha}.npy").write_bytes(b"junk")
     again = _load(tmp_path)[0]
     np.testing.assert_array_equal(expected, again.csi)
+
+
+S1_FILES = ["E", "W", "R", "J1", "J2", "L", "S", "C", "H"]
+
+
+def _write_sets(root: Path) -> None:
+    for name in ["S1a", "S1b"]:
+        for activity in S1_FILES:
+            _write(root, f"{name}_{activity}")
+    for name in ["S2a_W", "S6a_E", "S7a_E", "S7a_L2"]:
+        _write(root, name)
+
+
+def test_sharp_filter_labels_and_prefix(tmp_path):
+    _write_sets(tmp_path)
+    source = PadovaSharp(PadovaSharp.Params(root=str(tmp_path)))
+    check_dataset_source(source)
+    assert source.classes == ("empty", "sitting", "walking", "running", "jumping")
+    recs = {r.recording_id: r for r in source.load()}
+    expected = {f"padova_sharp/{s}/{s}_{a}" for s in ("S1a", "S1b") for a in S1_FILES[:6]}
+    assert set(recs) == expected  # S1*_S/C/H and other sets are skipped
+    labels = {rid.split("_")[-1]: r.label for rid, r in recs.items()}
+    assert labels == {"E": 0, "L": 1, "W": 2, "R": 3, "J1": 4, "J2": 4}
+    assert {r.room for r in recs.values()} == {"bedroom"}
+
+
+def test_s1_filter_labels_and_prefix(tmp_path):
+    _write_sets(tmp_path)
+    source = PadovaS1(PadovaS1.Params(root=str(tmp_path)))
+    check_dataset_source(source)
+    assert source.classes == padova.CLASSES
+    recs = source.load()
+    assert len(recs) == 18
+    assert all(r.recording_id.startswith("padova_s1/S1") for r in recs)
+    full = {r.recording_id.split("/", 1)[1]: r.label for r in _load(tmp_path)}
+    assert {r.recording_id.split("/", 1)[1]: r.label for r in recs} == {
+        k: v for k, v in full.items() if k.startswith("S1")
+    }
+
+
+@pytest.mark.parametrize("cls", [PadovaSharp, PadovaS1])
+def test_variants_need_s1(tmp_path, cls):
+    for name in ["S2a_E", "S2a_W", "S7a_L2"]:
+        _write(tmp_path, name)
+    with pytest.raises(DataError, match="no padova_.* recordings"):
+        cls(cls.Params(root=str(tmp_path))).load()
+
+
+def test_variants_share_the_padova_cache(tmp_path):
+    _write(tmp_path, "S1a_E", _rows(16, seed=1))
+    _write(tmp_path, "S1a_C", _rows(16, seed=2))
+    padova_recs = _load(tmp_path)
+    sharp = PadovaSharp(PadovaSharp.Params(root=str(tmp_path))).load()
+    assert [r.meta.source_sha256 for r in sharp] == [padova_recs[1].meta.source_sha256]
+    assert {p.parent.name for p in (tmp_path / ".cache").rglob("*.npy")} == {f"v{Padova.VERSION}"}
+    assert len(list((tmp_path / ".cache").rglob("*.npy"))) == 2
+
+
+@pytest.mark.skipif(not (REAL / "S1a").is_dir(), reason="dataset not present")
+@pytest.mark.parametrize(
+    ("cls", "name", "n_recordings", "n_classes", "split_hash"),
+    [
+        (PadovaSharp, "padova_sharp", 18, 5, "62b4f776f13e"),
+        (PadovaS1, "padova_s1", 27, 8, "4359a19e3c7d"),
+    ],
+)
+def test_real_variants(cls, name, n_recordings, n_classes, split_hash):
+    source = cls(cls.Params(root=str(REAL)))
+    check_dataset_source(source)
+    recs = source.load()
+    assert len(recs) == n_recordings
+    assert {r.room for r in recs} == {"bedroom"}
+    assert {r.label for r in recs} == set(range(n_classes))
+    assert all(r.recording_id.startswith(f"{name}/S1") for r in recs)
+    plan = TimeBlock().split(recs, name)
+    assert plan.split_hash == split_hash
+    assert load_split_plan(ROOT / "splits" / name / f"{split_hash}.json", recs) == plan

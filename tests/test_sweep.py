@@ -7,7 +7,12 @@ from csi_bench.config.experiment import compute_run_id
 from csi_bench.config.sweep import _set_path, expand_sweep
 from csi_bench.core import results_schema as rs
 from csi_bench.core.errors import ConfigError
-from csi_bench.core.splitplan import check_split_rooms, find_split, read_plan_params
+from csi_bench.core.splitplan import (
+    check_split_rooms,
+    find_split,
+    read_plan_params,
+    read_plan_splitter,
+)
 from csi_bench.runner import run as run_module
 from csi_bench.runner.cli import main
 from csi_bench.runner.discover import discover
@@ -456,6 +461,36 @@ def test_padova_cross_room_sweep_expands(monkeypatch):
         with pytest.raises(ConfigError, match="must equal"):
             check_split_rooms("room_holdout", params, ["bedroom"], "comparison")
     assert find_split("padova").stem == "b6010d87ce4d"  # an implicit split stays the block plan
+
+
+def test_padova_sharp_sweep_expands(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    raw = yaml.safe_load((ROOT / "experiments/padova_sharp.yaml").read_text())
+    baseline = yaml.safe_load((ROOT / "experiments/padova_classical_baseline.yaml").read_text())
+    s1_grid = {k: v for k, v in raw["sweep"][1].items() if k != "@dataset"}
+    assert s1_grid == {k: v for k, v in baseline["sweep"].items() if k != "selection.rooms"}
+    configs = [c for _, c in expand_sweep(raw, "padova_sharp")]
+    assert len({compute_run_id(c) for c in configs}) == len(configs) == 192
+    plans = {"padova_sharp": "62b4f776f13e", "padova_s1": "4359a19e3c7d"}
+    by_dataset = {d: [c for c in configs if c.dataset == d] for d in plans}
+    assert [len(v) for v in by_dataset.values()] == [120, 72]
+    for dataset, split in plans.items():
+        assert find_split(dataset).stem == split  # the only plan, so also the implicit one
+        assert read_plan_splitter(find_split(dataset)) == "time_block"
+        for c in by_dataset[dataset]:
+            assert (c.split, c.stride, c.role, c.seeds) == (split, 9, "comparison", [0])
+            assert c.selection.rooms == ["bedroom"]
+    assert {c.window_len for c in by_dataset["padova_sharp"]} == {20, 30, 40, 50, 346}
+    assert {c.window_len for c in by_dataset["padova_s1"]} == {20, 30, 40, 50}
+    for c in configs:
+        ids = [s.params["ids"] for s in c.preprocessing if s.name == "antennas"]
+        names = [e.name for e in c.extractors]
+        if ids == [[0, 1, 2, 3]]:
+            assert c.dataset == "padova_sharp" and names == ["amplitude_stats"]
+        else:
+            assert ids == [[0, 1]] and len(c.preprocessing) == 1
+    assert sum(len(c.preprocessing[0].params["ids"]) == 4 for c in configs) == 30
 
 
 def test_lwm_sweep_expands(monkeypatch):

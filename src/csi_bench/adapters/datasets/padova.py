@@ -48,15 +48,15 @@ _DROPPED = [0, 1, 2, 3, 4, 5, 25, 53, 89, 117, 127, 128, 129, 139, 167, 203, 231
 _SAMPLE_RATE_HZ = 173.0
 
 
-def _parse(path: Path) -> tuple[str, str, int]:
-    """Return (set name, room, label) for `<set>/<set>_<activity>[n].mat`."""
+def _parse(path: Path) -> tuple[str, int, str, str]:
+    """Return (set name, set number, room, activity letter) for `<set>/<set>_<activity>[n].mat`."""
     m = _NAME.match(path.stem)
     if m is None or m.group(3) not in _LETTERS or path.parent.name != m.group(1):
         raise DataError(f"unrecognised recording file name: {path.parent.name}/{path.name}")
     room = _ROOMS.get(int(m.group(2)))
     if room is None:
         raise DataError(f"unknown recording set: {path.parent.name}/{path.name}")
-    return m.group(1), room, _LETTERS.index(m.group(3))
+    return m.group(1), int(m.group(2)), room, m.group(3)
 
 
 def _convert(raw: bytes, name: str) -> np.ndarray:
@@ -122,10 +122,88 @@ def _read_index(path: Path) -> dict:
     return index if isinstance(index, dict) else {}
 
 
+def _load(
+    root: Path,
+    labels: dict[str, int],
+    prefix: str,
+    sets: frozenset[int] | None = None,
+) -> list[Recording]:
+    """Load `root/*/*.mat`, keeping files whose activity letter is in `labels` and whose set
+    number is in `sets` (all sets when None); the rest are skipped. Every variant shares
+    the on-disk cache, keyed on `Padova.VERSION`."""
+    if not root.is_dir():
+        raise DataError(f"dataset root not found: {root}")
+    paths = sorted(root.glob("*/*.mat"))
+    if not paths:
+        raise DataError(f"no .mat recordings in {root}")
+    cache = root / ".cache"
+    # Arrays live under the adapter version, so a changed conversion never reuses them.
+    arrays = cache / f"v{Padova.VERSION}"
+    index_path = cache / "index.json"
+    index = _read_index(index_path)
+    changed = False
+    recordings = []
+    for path in paths:
+        set_name, set_no, room, letter = _parse(path)
+        if letter not in labels or (sets is not None and set_no not in sets):
+            continue
+        key = path.relative_to(root).as_posix()
+        st = path.stat()
+        raw = None
+        entry = index.get(key)
+        if (
+            isinstance(entry, list)
+            and len(entry) == 3
+            and entry[:2] == [st.st_size, st.st_mtime_ns]
+            and isinstance(entry[2], str)
+        ):
+            sha = entry[2]
+        else:
+            raw = path.read_bytes()
+            sha = hashlib.sha256(raw).hexdigest()
+            index[key] = [st.st_size, st.st_mtime_ns, sha]
+            changed = True
+        cache_path = arrays / f"{sha}.npy"
+        csi = _open_cache(cache_path)
+        if csi is None:
+            if raw is None:
+                raw = path.read_bytes()
+            _write_cache(cache_path, _convert(raw, f"{set_name}/{path.name}"))
+            csi = _open_cache(cache_path)
+            if csi is None:
+                raise DataError(f"{path.name}: cache file unreadable: {cache_path}")
+            logger.debug("converted %s", path.name)
+        del raw
+        meta = RecordingMeta(
+            n_packets=csi.shape[1],
+            source_sha256=sha,
+            downsample_factor=None,
+            sample_rate_hz=_SAMPLE_RATE_HZ,
+        )
+        recordings.append(
+            Recording(
+                csi=csi,
+                antenna_ids=tuple(range(_N_ANTENNAS)),
+                recording_id=f"{prefix}/{set_name}/{path.stem}",
+                room=room,
+                label=labels[letter],
+                meta=meta,
+            )
+        )
+    if changed:
+        data = json.dumps(index, sort_keys=True).encode()
+        _replace_atomic(index_path, lambda f: f.write(data))
+    if not recordings:
+        raise DataError(f"no {prefix} recordings in {root}")
+    return sorted(recordings, key=lambda r: r.recording_id)
+
+
 @register("dataset", "padova")
 class Padova:
+    # Variants inherit VERSION: their arrays are converted and cached under it (see `_load`),
+    # so a conversion change must change their run ids too.
     VERSION = 1
-    classes = CLASSES
+    classes: tuple[str, ...] = CLASSES
 
     class Params(BaseModel):
         model_config = ConfigDict(extra="forbid")
@@ -136,65 +214,31 @@ class Padova:
         self.params = params or self.Params()
 
     def load(self) -> list[Recording]:
-        root = Path(self.params.root)
-        if not root.is_dir():
-            raise DataError(f"dataset root not found: {root}")
-        paths = sorted(root.glob("*/*.mat"))
-        if not paths:
-            raise DataError(f"no .mat recordings in {root}")
-        cache = root / ".cache"
-        # Arrays live under the adapter version, so a changed conversion never reuses them.
-        arrays = cache / f"v{self.VERSION}"
-        index_path = cache / "index.json"
-        index = _read_index(index_path)
-        changed = False
-        recordings = []
-        for path in paths:
-            set_name, room, label = _parse(path)
-            key = path.relative_to(root).as_posix()
-            st = path.stat()
-            raw = None
-            entry = index.get(key)
-            if (
-                isinstance(entry, list)
-                and len(entry) == 3
-                and entry[:2] == [st.st_size, st.st_mtime_ns]
-                and isinstance(entry[2], str)
-            ):
-                sha = entry[2]
-            else:
-                raw = path.read_bytes()
-                sha = hashlib.sha256(raw).hexdigest()
-                index[key] = [st.st_size, st.st_mtime_ns, sha]
-                changed = True
-            cache_path = arrays / f"{sha}.npy"
-            csi = _open_cache(cache_path)
-            if csi is None:
-                if raw is None:
-                    raw = path.read_bytes()
-                _write_cache(cache_path, _convert(raw, f"{set_name}/{path.name}"))
-                csi = _open_cache(cache_path)
-                if csi is None:
-                    raise DataError(f"{path.name}: cache file unreadable: {cache_path}")
-                logger.debug("converted %s", path.name)
-            del raw
-            meta = RecordingMeta(
-                n_packets=csi.shape[1],
-                source_sha256=sha,
-                downsample_factor=None,
-                sample_rate_hz=_SAMPLE_RATE_HZ,
-            )
-            recordings.append(
-                Recording(
-                    csi=csi,
-                    antenna_ids=tuple(range(_N_ANTENNAS)),
-                    recording_id=f"padova/{set_name}/{path.stem}",
-                    room=room,
-                    label=label,
-                    meta=meta,
-                )
-            )
-        if changed:
-            data = json.dumps(index, sort_keys=True).encode()
-            _replace_atomic(index_path, lambda f: f.write(data))
-        return sorted(recordings, key=lambda r: r.recording_id)
+        labels = {letter: i for i, letter in enumerate(_LETTERS)}
+        return _load(Path(self.params.root), labels, "padova")
+
+
+@register("dataset", "padova_s1")
+class PadovaS1(Padova):
+    """Set S1 only (bedroom, S1a-c), all eight `padova` classes in `padova` order."""
+
+    classes = CLASSES
+
+    def load(self) -> list[Recording]:
+        labels = {letter: i for i, letter in enumerate(_LETTERS)}
+        return _load(Path(self.params.root), labels, "padova_s1", frozenset({1}))
+
+
+SHARP_CLASSES = ("empty", "sitting", "walking", "running", "jumping")
+_SHARP_LETTERS = "ELWRJ"  # same order as SHARP_CLASSES
+
+
+@register("dataset", "padova_sharp")
+class PadovaSharp(Padova):
+    """SHARP's S1 protocol: set S1 only with its five activities; other files are skipped."""
+
+    classes = SHARP_CLASSES
+
+    def load(self) -> list[Recording]:
+        labels = {letter: i for i, letter in enumerate(_SHARP_LETTERS)}
+        return _load(Path(self.params.root), labels, "padova_sharp", frozenset({1}))
