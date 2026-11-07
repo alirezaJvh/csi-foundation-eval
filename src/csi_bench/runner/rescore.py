@@ -26,6 +26,7 @@ from csi_bench.runner.report import (
     _index_row,
     _read_json,
     _read_scores,
+    _section_key,
 )
 from csi_bench.runner.run import DEFAULT_CACHE_ROOT, _execute, _git, resolve_workers
 
@@ -178,11 +179,18 @@ def _old_best(rows: list[dict]) -> dict[tuple[str, str], dict]:
     return best
 
 
-def _cells(rows: list[dict], pick: Callable[[list[dict]], dict]) -> dict[tuple[str, ...], dict]:
-    """The row `pick` selects per (dataset, splitter, role, method, room), as `report` groups."""
+def _cells(
+    rows: list[dict],
+    pick: Callable[[list[dict]], dict],
+    split_root: str | Path,
+    gaps: dict[tuple[str, str], int | None],
+) -> dict[tuple[str, ...], dict]:
+    """The row `pick` selects per (dataset, section, role, method, room), as `report` groups:
+    the section is the splitter, or `time_block, gap_packets <n>` for a non-default gap.
+    """
     tables: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
     for r in rows:
-        tables[r["dataset"], r["splitter"], r["role"]].append(r)
+        tables[(*_section_key(r, split_root, gaps), r["role"])].append(r)
     return {
         (*table, *cell): row
         for table, members in tables.items()
@@ -286,6 +294,7 @@ def rescore_report(
     # Also catches a run `_index_row` could not read: it has no row, so it is never scored.
     unscored = sorted(set(store) - {r["run_id"] for r in new_rows if _is_scored_done(r)})
     dirty = sum(1 for r in new_rows if r["dirty"])
+    gaps: dict[tuple[str, str], int | None] = {}
     old_best = _cells(
         [
             r
@@ -293,6 +302,8 @@ def rescore_report(
             if r["split_hash"] and r["val_macro_f1_mean"] is not None and not r["dirty"]
         ],
         _old_best,
+        split_root,
+        gaps,
     )
     new_best = _cells(
         [
@@ -301,6 +312,8 @@ def rescore_report(
             if _is_scored_done(r) and r["split_hash"] and (allow_dirty or not r["dirty"])
         ],
         _best,
+        split_root,
+        gaps,
     )
     changed = _changed_cells(old_best, new_best)
 

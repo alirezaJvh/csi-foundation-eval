@@ -6,7 +6,7 @@ import yaml
 from csi_bench.config.experiment import compute_run_id
 from csi_bench.config.sweep import _set_path, expand_sweep
 from csi_bench.core import results_schema as rs
-from csi_bench.core.errors import ConfigError
+from csi_bench.core.errors import ConfigError, DataError
 from csi_bench.core.splitplan import (
     check_split_rooms,
     find_split,
@@ -468,21 +468,33 @@ def test_padova_sharp_sweep_expands(monkeypatch):
     discover()
     raw = yaml.safe_load((ROOT / "experiments/padova_sharp.yaml").read_text())
     baseline = yaml.safe_load((ROOT / "experiments/padova_classical_baseline.yaml").read_text())
-    s1_grid = {k: v for k, v in raw["sweep"][1].items() if k != "@dataset"}
+    s1_grid = {k: v for k, v in raw["sweep"][2].items() if k != "@dataset"}
     assert s1_grid == {k: v for k, v in baseline["sweep"].items() if k != "selection.rooms"}
     configs = [c for _, c in expand_sweep(raw, "padova_sharp")]
-    assert len({compute_run_id(c) for c in configs}) == len(configs) == 192
-    plans = {"padova_sharp": "62b4f776f13e", "padova_s1": "4359a19e3c7d"}
-    by_dataset = {d: [c for c in configs if c.dataset == d] for d in plans}
-    assert [len(v) for v in by_dataset.values()] == [120, 72]
-    for dataset, split in plans.items():
-        assert find_split(dataset).stem == split  # the only plan, so also the implicit one
-        assert read_plan_splitter(find_split(dataset)) == "time_block"
-        for c in by_dataset[dataset]:
-            assert (c.split, c.stride, c.role, c.seeds) == (split, 9, "comparison", [0])
+    assert len({compute_run_id(c) for c in configs}) == len(configs) == 216
+    gap64, gap346, s1 = "62b4f776f13e", "7640fb8ad320", "4359a19e3c7d"
+    groups = {
+        (d, p): [c for c in configs if (c.dataset, c.split) == (d, p)]
+        for d, p in (("padova_sharp", gap64), ("padova_sharp", gap346), ("padova_s1", s1))
+    }
+    assert [len(v) for v in groups.values()] == [96, 48, 72]
+    assert sum(len(v) for v in groups.values()) == len(configs)
+    with pytest.raises(DataError, match=f"{gap64}, {gap346}"):
+        find_split("padova_sharp")  # two block plans: no implicit split
+    assert find_split("padova_s1").stem == s1
+    gaps = {gap64: 64, gap346: 346, s1: 64}
+    for (dataset, split), group in groups.items():
+        plan = find_split(dataset, split)
+        assert read_plan_splitter(plan) == "time_block"
+        params = read_plan_params(plan)
+        assert params["gap_packets"] == gaps[split]
+        assert params["fractions"] == [0.6, 0.2, 0.2]
+        for c in group:
+            assert (c.stride, c.role, c.seeds) == (9, "comparison", [0])
             assert c.selection.rooms == ["bedroom"]
-    assert {c.window_len for c in by_dataset["padova_sharp"]} == {20, 30, 40, 50, 346}
-    assert {c.window_len for c in by_dataset["padova_s1"]} == {20, 30, 40, 50}
+    assert {c.window_len for c in groups["padova_sharp", gap64]} == {20, 30, 40, 50}
+    assert {c.window_len for c in groups["padova_sharp", gap346]} == {50, 346}
+    assert {c.window_len for c in groups["padova_s1", s1]} == {20, 30, 40, 50}
     for c in configs:
         ids = [s.params["ids"] for s in c.preprocessing if s.name == "antennas"]
         names = [e.name for e in c.extractors]
@@ -490,7 +502,7 @@ def test_padova_sharp_sweep_expands(monkeypatch):
             assert c.dataset == "padova_sharp" and names == ["amplitude_stats"]
         else:
             assert ids == [[0, 1]] and len(c.preprocessing) == 1
-    assert sum(len(c.preprocessing[0].params["ids"]) == 4 for c in configs) == 30
+    assert sum(len(c.preprocessing[0].params["ids"]) == 4 for c in configs) == 36
 
 
 def test_lwm_sweep_expands(monkeypatch):

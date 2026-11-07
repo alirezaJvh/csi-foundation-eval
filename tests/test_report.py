@@ -426,6 +426,56 @@ def test_time_block_section_with_other_rooms_takes_columns_from_rows(runs, capsy
     ]
 
 
+def _gap_plans(split_root, dataset, gaps):
+    for split_hash, gap in gaps.items():
+        path = split_root / dataset / f"{split_hash}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        params = {"gap_packets": gap, "fractions": [0.6, 0.2, 0.2]}
+        path.write_text(json.dumps({"splitter": "time_block", "params": params}))
+
+
+def test_time_block_plans_with_another_gap_get_their_own_section(runs, tmp_path, capsys):
+    from csi_bench.runner.report import report
+
+    split_root = tmp_path / "splits"
+    _gap_plans(split_root, "padova_sharp", {"g64": 64, "g346": 346})
+    for run_id, split, window, test in (("s1", "g64", 50, 0.41), ("s2", "g346", 346, 0.47)):
+        config = {**_config(["bedroom"], window=window), "dataset": "padova_sharp", "split": split}
+        _make_run(runs, run_id, config, 0.9, test, split_hash=split)
+    assert report(runs, split_root=split_root) == 0
+    out = capsys.readouterr().out
+    lines = out.splitlines()
+    assert "padova_sharp / time_block" in lines
+    assert "padova_sharp / time_block, gap_packets 346" in lines
+    gapped_at = out.index("padova_sharp / time_block,")
+    default = out[out.index("padova_sharp / time_block\n") : gapped_at]
+    gapped = out[gapped_at : out.index("tor_vergata / time_block")]
+    for section, shown, hidden in ((default, "41.00", "47.00"), (gapped, "47.00", "41.00")):
+        headers = [line.split() for line in section.splitlines() if line.startswith("method")]
+        assert headers == [["method", "bedroom"]]
+        assert f"F1 {shown} [-]" in section and hidden not in section
+    tor = out[out.index("tor_vergata / time_block") :]
+    assert [line.split() for line in tor.splitlines() if line.startswith("method")] == [
+        ["method", "r1", "r2", "mixed"]
+    ]
+    assert "Leakage" not in out
+
+
+def test_same_gap_plans_in_one_column_still_refused(runs, tmp_path, capsys):
+    from csi_bench.runner.report import report
+
+    split_root = tmp_path / "splits"
+    _gap_plans(split_root, "padova_sharp", {"a346": 346, "b346": 346})
+    for run_id, split, head in (("s1", "a346", "svm"), ("s2", "b346", "knn")):
+        config = {**_config(["bedroom"], head=head), "dataset": "padova_sharp", "split": split}
+        _make_run(runs, run_id, config, 0.9, 0.5, split_hash=split)
+    assert report(runs, split_root=split_root) == 2
+    cap = capsys.readouterr()
+    assert cap.out == ""
+    assert "padova_sharp / time_block, gap_packets 346" in cap.err
+    assert "a346" in cap.err and "b346" in cap.err and "column bedroom" in cap.err
+
+
 INTERVALS = {
     "accuracy": [0.6012, 0.6234],
     "macro_f1": [0.5871, 0.6129],

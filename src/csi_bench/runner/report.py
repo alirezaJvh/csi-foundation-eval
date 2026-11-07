@@ -10,6 +10,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import yaml
 
+from csi_bench.adapters.splitters.time_block import TimeBlock
 from csi_bench.core import results_schema as rs
 from csi_bench.core.errors import ConfigError, DataError
 from csi_bench.core.splitplan import ROOM_HOLDOUT, find_split, read_plan_params
@@ -18,6 +19,7 @@ from csi_bench.runner.migrate import find_legacy_dirs
 
 DEFAULT_REFERENCE = "experiments/published_reference.yaml"
 _SCORES = ("macro_f1", "accuracy")
+_TIME_BLOCK = "time_block"
 
 
 def _read_json(path: Path) -> dict:
@@ -356,8 +358,9 @@ def report(
             "(runs whose predictions are missing stay without)\n"
         )
     sections: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    gaps: dict[tuple[str, str], int | None] = {}
     for r in usable:
-        sections[r["dataset"], r["splitter"]].append(r)
+        sections[_section_key(r, split_root, gaps)].append(r)
     try:
         for (dataset, splitter), rows_in in sections.items():
             for role in ("comparison", "reference"):
@@ -399,6 +402,33 @@ def report(
         out += _leakage(random_side, block_side, published)
     sys.stdout.write("\n".join(out).strip("\n") + "\n")
     return 0
+
+
+def _plan_gap(dataset: str, split_hash: str, split_root: str | Path) -> int | None:
+    """The `gap_packets` of a committed plan, or None if the plan is missing or unreadable."""
+    try:
+        gap = read_plan_params(find_split(dataset, split_hash, split_root))["gap_packets"]
+    except (DataError, KeyError):
+        return None
+    return gap if isinstance(gap, int) and not isinstance(gap, bool) else None
+
+
+def _section_key(
+    row: dict, split_root: str | Path, gaps: dict[tuple[str, str], int | None]
+) -> tuple[str, str]:
+    """`(dataset, splitter)`, or `(dataset, "time_block, gap_packets <n>")` for a `time_block`
+    row whose plan's gap differs from `TimeBlock`'s default, so those runs get their own section.
+    """
+    dataset, splitter = row["dataset"], row["splitter"]
+    if splitter != _TIME_BLOCK:
+        return dataset, splitter
+    key = (dataset, row["split_hash"])
+    if key not in gaps:
+        gaps[key] = _plan_gap(dataset, row["split_hash"], split_root)
+    gap = gaps[key]
+    if gap is None or gap == TimeBlock.Params().gap_packets:
+        return dataset, splitter
+    return dataset, f"{splitter}, gap_packets {gap}"
 
 
 def _section(

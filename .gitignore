@@ -23,6 +23,7 @@ data/**/*.pth
 *.ckpt
 *.safetensors
 runs/
+runs_archive/
 results/
 wandb/
 

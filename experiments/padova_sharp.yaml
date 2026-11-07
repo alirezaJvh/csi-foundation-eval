@@ -1,25 +1,33 @@
 # Padova SHARP-comparable run (Story 6.3): how much of the gap to SHARP (arXiv 2103.09924, S1,
 # 5 classes, 96-99.8 % accuracy) closes per protocol change. Attribution chain, one step at a time:
 #   bedroom `padova` (S1-S5, 8 classes, windows 20-50; padova_classical_baseline.yaml)
-#   -> `padova_s1` (data subset: S1 only, still 8 classes)                         item 1 below
-#   -> `padova_sharp` windows 20-50 (class set: SHARP's 5 classes)                 item 0 below
-#   -> `padova_sharp` window 346 (window length: 346 packets ~ 2 s at 173 Hz)      item 0 below
+#   -> `padova_s1` (data subset: S1 only, still 8 classes)                  item 2 below
+#   -> `padova_sharp` w20-50, gap 64 (class set: SHARP's 5 classes)         item 0 below
+#   -> `padova_sharp` w50, gap 346 (gap effect: larger gap, smaller blocks) item 1 below
+#   -> `padova_sharp` w346, gap 346 (window effect: ~2 s at 173 Hz)         item 1 below
 # `ant4` (all four antennas, amplitude_stats only) is reported separately, outside the chain.
-# Plans (time_block, fractions 0.6/0.2/0.2, gap 64; one per dataset, so each is also the implicit
-# split): padova_sharp 62b4f776f13e, padova_s1 4359a19e3c7d.
+# Plans (time_block, fractions 0.6/0.2/0.2):
+#   padova_sharp 62b4f776f13e (gap_packets 64), padova_sharp 7640fb8ad320 (gap_packets 346),
+#   padova_s1 4359a19e3c7d (gap_packets 64).
+# `padova_sharp` has two block plans, so it has no implicit split: every command must name one
+# (`split:` here, `--split` on the CLI, e.g. `describe padova_sharp --split 62b4f776f13e`).
+# The gap-346 runs appear in their own report section `padova_sharp / time_block, gap_packets 346`.
+# Why gap 346: a 346-packet window on the gap-64 plan would confound window length with block
+# spacing. On the gap-346 plan the gap is never shorter than the window; window 50 on that plan
+# is the control that separates the gap's effect from the window's.
 # Stride rule: padova uses stride 9 (one window start about every 50 ms at 173 Hz); tor_vergata
 # uses stride 1. Stride is not tuned.
-# Window 346 is longer than gap_packets 64. Windows never cross block edges, so no packet is shared
-# across parts, but neighbouring blocks are closer in time relative to the window.
 # window_len starts at 20 because paper_beamforming needs at least 18 packets. mrmr k stays <= 3,
 # the smallest feature-set width (amplitude_stats under ant2).
 # `sweep:` is a list: items are expanded against the same base and unioned (deduped by run id).
-#   item 0: padova_sharp, 5 windows x 4 feature/preprocessing pairs x 2 selection x 3 heads = 120.
-#           `@features` pairs extractors with preprocessing: amplitude_stats under ant2 and ant4;
-#           paper_beamforming and both sets under ant2 only (paper_beamforming needs 2 antennas).
-#   item 1: padova_s1, the padova baseline grid without the room axis: 4 windows x 3 feature sets
+#   item 0: padova_sharp, gap-64 plan, 4 windows x 4 feature/preprocessing pairs x 2 selection
+#           x 3 heads = 96. `@features` pairs extractors with preprocessing: amplitude_stats under
+#           ant2 and ant4; paper_beamforming and both sets under ant2 only (paper_beamforming
+#           needs 2 antennas).
+#   item 1: padova_sharp, gap-346 plan, windows [50, 346], same grid otherwise: 2 x 4 x 2 x 3 = 48.
+#   item 2: padova_s1, the padova baseline grid without the room axis: 4 windows x 3 feature sets
 #           (ant2) x 2 selection x 3 heads = 72.
-# Total 192 runs.
+# Total 96 + 48 + 72 = 216 runs.
 dataset: padova_sharp
 split: "62b4f776f13e"
 selection: {rooms: [bedroom]}
@@ -32,7 +40,18 @@ head: {name: svm}
 seeds: [0]
 role: comparison
 sweep:
-  - window_len: [20, 30, 40, 50, 346]
+  - window_len: [20, 30, 40, 50]
+    "@features":
+      - {extractors: [{name: amplitude_stats}], preprocessing: [ant2]}
+      - {extractors: [{name: amplitude_stats}], preprocessing: [ant4]}
+      - {extractors: [{name: paper_beamforming}], preprocessing: [ant2]}
+      - {extractors: [{name: amplitude_stats}, {name: paper_beamforming}], preprocessing: [ant2]}
+    feature_selection:
+      - null
+      - {mrmr: {k: [2, 3]}}
+    head.name: [svm, knn, random_forest]
+  - split: ["7640fb8ad320"]
+    window_len: [50, 346]
     "@features":
       - {extractors: [{name: amplitude_stats}], preprocessing: [ant2]}
       - {extractors: [{name: amplitude_stats}], preprocessing: [ant4]}

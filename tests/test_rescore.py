@@ -219,6 +219,28 @@ def test_report_shows_a_changed_cell_and_only_changed_cells(tmp_path, capsys):
     assert " r2 " not in text
 
 
+def test_report_groups_gap_346_plans_in_their_own_table(tmp_path, capsys):
+    from tests.test_report import _gap_plans
+
+    root, backup, split_root = tmp_path / "runs", tmp_path / "backup", tmp_path / "splits"
+    _gap_plans(split_root, "padova_sharp", {"g64": 64, "g346": 346})
+    # one cell (svm / bedroom) per plan: grouped together, `w346` would win both
+    for run_id, split, window, tuning in (("w50", "g64", 50, 0.70), ("w346", "g346", 346, 0.90)):
+        config = {
+            **_report_config(["bedroom"], window=window),
+            "dataset": "padova_sharp",
+            "split": split,
+        }
+        _make_run(root, run_id, config, 0.80, 0.60, split_hash=split, tuning=tuning)
+        _backup_of(root, backup, run_id, 0.80, 0.60)
+    code = rescore_report(root, backup, split_root=split_root)
+    text = capsys.readouterr().out
+    assert code == 0, text
+    assert "## padova_sharp / time_block\n" in text
+    assert "## padova_sharp / time_block, gap_packets 346\n" in text
+    assert "cells changed: 0 of 2" in text
+
+
 def test_report_lists_a_test_mismatch_and_keeps_the_new_metrics(store, capsys):
     root, backup, ids = store
     assert _rescore(root, backup, capsys)[0] == 0

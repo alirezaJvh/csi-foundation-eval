@@ -308,13 +308,14 @@ def test_variants_share_the_padova_cache(tmp_path):
 
 @pytest.mark.skipif(not (REAL / "S1a").is_dir(), reason="dataset not present")
 @pytest.mark.parametrize(
-    ("cls", "name", "n_recordings", "n_classes", "split_hash"),
+    ("cls", "name", "n_recordings", "n_classes", "gap_packets", "split_hash"),
     [
-        (PadovaSharp, "padova_sharp", 18, 5, "62b4f776f13e"),
-        (PadovaS1, "padova_s1", 27, 8, "4359a19e3c7d"),
+        (PadovaSharp, "padova_sharp", 18, 5, 64, "62b4f776f13e"),
+        (PadovaSharp, "padova_sharp", 18, 5, 346, "7640fb8ad320"),
+        (PadovaS1, "padova_s1", 27, 8, 64, "4359a19e3c7d"),
     ],
 )
-def test_real_variants(cls, name, n_recordings, n_classes, split_hash):
+def test_real_variants(cls, name, n_recordings, n_classes, gap_packets, split_hash):
     source = cls(cls.Params(root=str(REAL)))
     check_dataset_source(source)
     recs = source.load()
@@ -322,6 +323,6 @@ def test_real_variants(cls, name, n_recordings, n_classes, split_hash):
     assert {r.room for r in recs} == {"bedroom"}
     assert {r.label for r in recs} == set(range(n_classes))
     assert all(r.recording_id.startswith(f"{name}/S1") for r in recs)
-    plan = TimeBlock().split(recs, name)
+    plan = TimeBlock(TimeBlock.Params(gap_packets=gap_packets)).split(recs, name)
     assert plan.split_hash == split_hash
     assert load_split_plan(ROOT / "splits" / name / f"{split_hash}.json", recs) == plan
