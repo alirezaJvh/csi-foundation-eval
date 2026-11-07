@@ -1,3 +1,4 @@
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -431,6 +432,31 @@ def test_padova_sweep_expands(monkeypatch):
         ("laboratory",),
         ("living_room",),
     ]
+
+
+def test_csi_bench_hp_sweep_expands(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    raw = yaml.safe_load((ROOT / "experiments/csi_bench_hp_classical_baseline.yaml").read_text())
+    baseline = yaml.safe_load((ROOT / "experiments/classical_baseline.yaml").read_text())
+    rooms = "selection.rooms"
+    assert {k: v for k, v in raw["sweep"].items() if k != rooms} == {
+        k: v for k, v in baseline["sweep"].items() if k != rooms
+    }
+    configs = [c for _, c in expand_sweep(raw, "csi_bench_hp_classical_baseline")]
+    assert len({compute_run_id(c) for c in configs}) == len(configs) == 576
+    split = "a17121b9b216"
+    plan = find_split("csi_bench_hp", split)
+    assert plan.is_file() and read_plan_splitter(plan) == "time_block"
+    assert read_plan_params(plan) == {"fractions": [0.6, 0.2, 0.2], "gap_packets": 64}
+    assert find_split("csi_bench_hp").stem == split
+    for c in configs:
+        assert (c.dataset, c.split, c.stride) == ("csi_bench_hp", split, 6)
+        assert (c.role, c.seeds) == ("comparison", [0])
+        assert [(s.name, s.params) for s in c.preprocessing] == [("antennas", {"ids": [0, 1]})]
+    all_rooms = ["E01", "E02", "E03", "E04", "E05", "E06", "E27"]
+    room_sets = Counter(tuple(c.selection.rooms) for c in configs)
+    assert room_sets == {**{(r,): 72 for r in all_rooms}, tuple(all_rooms): 72}
 
 
 def test_padova_cross_room_sweep_expands(monkeypatch):
