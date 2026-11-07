@@ -158,7 +158,7 @@
 
 ## Deferred from: code review of spec-6-3-padova-sharp-comparable-run.md (2026-11-07)
 
-- Unverified, would be medium: the parallel block-context pool (`_compute_contexts_parallel`, `src/csi_bench/runner/run.py`) has no memory-aware cap and no serial fallback if a forked child is OOM-killed (`BrokenProcessPool` aborts the run). The cold-cache `padova_sharp` sweep with `--workers > 1` settles it: check `max_child_peak_rss_mb` on the extraction log lines against the 11 GB machine.
+- Unverified, would be medium: the parallel block-context pool (`_compute_contexts_parallel`, `src/csi_bench/runner/run.py`) has no memory-aware cap and no serial fallback if a forked child is OOM-killed (`BrokenProcessPool` aborts the run). The cold-cache `padova_sharp` sweep with `--workers > 1` settles it: check `max_child_peak_rss_mb` on the extraction log lines against the 11 GB machine. **Memory part settled (2026-11-07):** the cold gap-346 sweep at `--workers 8` peaked at 5232 MB per child; the `BrokenProcessPool` fallback stays open.
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-3-padova-sharp-comparable-run.md`
   summary: The leakage table reads only the plain `(dataset, "time_block")` section, so comparison runs on a non-default-gap `time_block` plan never feed it, and no test pins which plan the leakage side uses.
   evidence: `runner/report.py` leakage block uses `sections.get((dataset, "time_block"))` after `_section_key` moved gap-N rows; unreachable today (only tor_vergata has `random_window`, all its block plans are gap 64); settle with a test once a dataset has both a `random_window` plan and a non-default-gap block plan.

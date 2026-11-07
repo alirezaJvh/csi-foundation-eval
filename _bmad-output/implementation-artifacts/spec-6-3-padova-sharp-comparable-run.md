@@ -2,7 +2,7 @@
 title: 'Padova SHARP-comparable run'
 type: 'feature'
 created: '2026-11-07'
-status: 'in-progress'
+status: 'done'
 baseline_commit: '3047aadef4523711065d456f7ad6058ac9d0d807'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -82,8 +82,8 @@ context:
 - [x] `experiments/padova_sharp.yaml` -- split sweep item 0 into item 0 (gap-64 plan `62b4f776f13e`, `window_len: [20, 30, 40, 50]`, 96 runs) and item 1 (`split:` the gap-346 hash, `window_len: [50, 346]`, same `@features`/selection/heads, 48 runs); `padova_s1` becomes item 2. Header: both padova_sharp plans and the s1 plan, the counts 96 + 48 + 72 = 216, the chain step w50 gap 64 → w50 gap 346 (gap effect) → w346 gap 346 (window effect), and that `padova_sharp` needs an explicit split.
 - [x] `tests/test_sweep.py` `test_padova_sharp_sweep_expands` -- 216 unique ids; `padova_sharp` runs are 96 on `62b4f776f13e` with windows {20, 30, 40, 50} and 48 on the gap-346 plan with windows {50, 346}; 72 `padova_s1`; `find_split("padova_sharp")` raises `DataError`, each named plan is `time_block` with the expected `gap_packets`; `ant4` only with `amplitude_stats` and `padova_sharp`, 36 runs; the s1 grid check reads item 2.
 - [x] `src/csi_bench/runner/report.py`, `tests/test_report.py` -- in `report()`, when building `sections`, a `time_block` row whose plan (`find_split(dataset, row["split_hash"], split_root)` + `read_plan_params`) has `gap_packets` other than `TimeBlock.Params().gap_packets` gets the section key `(dataset, "time_block, gap_packets <n>")`; an unreadable or missing plan keeps the plain key. Respect the import-linter contracts when reading the default. Tests: the two matrix rows "Gap-346 report" and "Same-gap mix"; existing report tests unchanged and passing.
-- [ ] Real store (human, after committing) -- `describe padova_sharp`, `sweep`, `report`; record table and run time in Implementation Notes.
-- [ ] Write-up `_bmad-output/reports/padova-sharp-6-3.md` (after sweep) -- SHARP's S1 number (arXiv 2103.09924) beside ours, gap closed per step of the chain (bedroom `padova` → `padova_s1` → `padova_sharp` ≤ 50 → `padova_sharp` w50 on the gap-346 plan → `padova_sharp` 346 on the gap-346 plan; `ant4` reported separately), accuracy and macro-F1, whether a Doppler family is worth proposing.
+- [x] Real store (human, after committing) -- `describe padova_sharp`, `sweep`, `report`; record table and run time in Implementation Notes.
+- [x] Write-up `_bmad-output/reports/padova-sharp-6-3.md` (after sweep) -- SHARP's S1 number (arXiv 2103.09924) beside ours, gap closed per step of the chain (bedroom `padova` → `padova_s1` → `padova_sharp` ≤ 50 → `padova_sharp` w50 on the gap-346 plan → `padova_sharp` 346 on the gap-346 plan; `ant4` reported separately), accuracy and macro-F1, whether a Doppler family is worth proposing.
 
 **Acceptance Criteria:**
 - Given the code, when `pytest` runs, then the new tests pass and the existing `padova` tests are unchanged and pass.
@@ -187,6 +187,8 @@ context:
 - 2026-11-07: code review skipped and nothing staged or committed, at the human's request. The spec stays `in-progress` (sprint status `in-progress`) until the sweep, `report` and write-up are done, as in Story 6.2.
 - 2026-11-07: code review run afterwards (4 layers): 1 patch applied (variants inherit `Padova.VERSION`, still 1, so run ids and plans are unchanged), 16 rejected; `ruff` clean, `pytest` 581 passed. Still nothing staged or committed.
 - 2026-11-07: code review 2 (4 layers, incl. the parallel block-context build): 1 patch applied (`_compute_contexts_parallel` now `put`s each context as `pool.map` yields it, so a failing task keeps the blocks before it; new `test_parallel_block_contexts_keep_finished_blocks_when_a_task_fails`), 1 deferred (pool memory headroom, settled by the cold-cache sweep's `max_child_peak_rss_mb`), 26 rejected; `ruff` clean, `lint-imports` 6 kept, `pytest` 587 passed. Still nothing staged or committed; status stays `in-progress` until the sweep, `report` and write-up.
+
+- 2026-11-07 (real store, story closed): sweep 216/216 `done`, none dirty. `padova_sharp` gap 64 (96 runs, `737986f`/`8962d69`, 09:07–10:53 UTC, 36 min of run time), `padova_s1` (72, `737986f`, 10:53–12:53, 120 min), `padova_sharp` gap 346 (48, `738f1b9`, 13:58–14:50, 51 min; the 54 cold block contexts took about 23 min with the parallel pool at `--workers 8`, peak child RSS 5232 MB, which settles the deferred pool-memory item). The 48 gap-346 runs first recorded `dirty: true` at `d67bef6` because this spec was edited mid-sweep; their recorded diff is byte-identical to `d67bef6..738f1b9`, so provenance was set to `738f1b9`, clean (originals in `runs_archive/provenance_backup_gap346_dirty/`). The 24 failed w346 gap-64 runs from the 192-run sweep sit in `runs_archive/padova_sharp_gap64_w346/`. `report` exits 0 with sections `padova_s1 / time_block`, `padova_sharp / time_block`, `padova_sharp / time_block, gap_packets 346`; saved as `_bmad-output/reports/padova-sharp-6-3.txt`. Chain, best by val (both / none / `random_forest`), test macro-F1 / accuracy: `padova` bedroom 61.87 / 63.40 → `padova_s1` 69.84 / 69.85 → `padova_sharp` w≤50 81.61 / 81.55 → gap 346 w50 80.82 / 80.79 → w346 89.40 / 89.50, against SHARP S1 99.59 % accuracy, F1 0.996 (Table 3). Write-up: `_bmad-output/reports/padova-sharp-6-3.md` (about 72 % of the accuracy gap closed; class set +11.70, window +8.71, S1 +6.45, gap ≈ 0; `ant4` no gain; Doppler family worth proposing as its own story).
 
 ## Spec Change Log
 

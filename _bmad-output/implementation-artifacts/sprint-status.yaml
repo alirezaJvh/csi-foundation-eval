@@ -81,7 +81,7 @@ development_status:
   epic-6: in-progress
   6-1-padova-80-mhz-loader: done
   6-2-padova-cross-room-baseline: done
-  6-3-padova-sharp-comparable-run: in-progress
+  6-3-padova-sharp-comparable-run: done
   6-4-csi-bench-loader: backlog
   epic-6-retrospective: optional
 

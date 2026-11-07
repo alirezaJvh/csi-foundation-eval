@@ -1,0 +1,1206 @@
+padova / room_holdout
+=====================
+
+Comparison (test score of the variant with the best tuning-stage val F1)
+
+method                                                    bedroom→laboratory                                  bedroom→living_room
+amplitude_stats | mrmr | knn                              F1 18.88 [18.38, 19.39] acc 18.63 [18.07, 19.19] *  F1 7.87 [7.02, 8.82] acc 8.39 [7.57, 9.19] *
+amplitude_stats | mrmr | random_forest                    F1 15.21 [14.62, 15.80] acc 15.65 [14.98, 16.32] *  F1 7.85 [7.13, 8.62] acc 8.57 [7.73, 9.38] *
+amplitude_stats | mrmr | svm                              F1 12.89 [12.66, 13.14] acc 14.21 [13.69, 14.74] *  F1 11.27 [10.56, 12.10] acc 11.58 [10.24, 12.89] *
+amplitude_stats | none | knn                              F1 18.88 [18.38, 19.39] acc 18.63 [18.07, 19.19] *  F1 7.87 [7.02, 8.82] acc 8.39 [7.57, 9.19] *
+amplitude_stats | none | random_forest                    F1 15.13 [14.60, 15.66] acc 15.66 [15.06, 16.25] *  F1 8.02 [7.27, 8.83] acc 8.75 [7.90, 9.60] *
+amplitude_stats | none | svm                              F1 12.89 [12.66, 13.14] acc 14.21 [13.69, 14.74] *  F1 11.27 [10.56, 12.10] acc 11.58 [10.24, 12.89] *
+amplitude_stats+paper_beamforming | mrmr | knn            F1 16.63 [15.90, 17.35] acc 17.16 [16.35, 17.97] *  F1 18.04 [16.57, 19.30] acc 19.57 [17.87, 21.08] *
+amplitude_stats+paper_beamforming | mrmr | random_forest  F1 19.36 [17.74, 20.90] acc 20.66 [18.98, 22.35] *  F1 21.04 [19.63, 22.51] acc 23.77 [21.82, 25.78] *
+amplitude_stats+paper_beamforming | mrmr | svm            F1 18.09 [17.13, 19.03] acc 21.74 [20.76, 22.72] *  F1 19.48 [18.57, 20.34] acc 25.34 [24.39, 26.26] *
+amplitude_stats+paper_beamforming | none | knn            F1 10.13 [9.43, 10.70] acc 11.30 [10.51, 12.06] *   F1 10.14 [9.07, 11.23] acc 11.18 [9.76, 12.61] *
+amplitude_stats+paper_beamforming | none | random_forest  F1 12.71 [11.81, 13.25] acc 14.68 [13.53, 15.37] *  F1 11.80 [11.30, 12.34] acc 14.37 [13.75, 15.00] *
+amplitude_stats+paper_beamforming | none | svm            F1 11.09 [9.14, 12.82] acc 12.89 [10.42, 15.36] *   F1 10.55 [9.90, 11.18] acc 11.75 [10.99, 12.46] *
+paper_beamforming | mrmr | knn                            F1 16.63 [15.90, 17.35] acc 17.16 [16.35, 17.97] *  F1 18.04 [16.57, 19.30] acc 19.57 [17.87, 21.08] *
+paper_beamforming | mrmr | random_forest                  F1 19.36 [17.74, 20.90] acc 20.66 [18.98, 22.35] *  F1 21.04 [19.63, 22.51] acc 23.77 [21.82, 25.78] *
+paper_beamforming | mrmr | svm                            F1 18.09 [17.13, 19.03] acc 21.74 [20.76, 22.72] *  F1 19.48 [18.57, 20.34] acc 25.34 [24.39, 26.26] *
+paper_beamforming | none | knn                            F1 13.57 [12.78, 14.11] acc 14.60 [13.62, 15.31] *  F1 14.79 [14.11, 15.68] acc 17.24 [16.09, 18.41] *
+paper_beamforming | none | random_forest                  F1 15.14 [14.01, 16.24] acc 16.91 [15.42, 18.40] *  F1 18.62 [16.72, 20.48] acc 22.16 [19.11, 25.23] *
+paper_beamforming | none | svm                            F1 18.24 [17.57, 18.90] acc 21.21 [20.25, 22.18] *  F1 14.32 [13.75, 15.04] acc 16.18 [15.39, 16.94] *
+* bedroom→laboratory / amplitude_stats | mrmr | knn: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / amplitude_stats | mrmr | knn: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / amplitude_stats | mrmr | random_forest: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / amplitude_stats | mrmr | random_forest: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / amplitude_stats | mrmr | svm: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / amplitude_stats | mrmr | svm: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / amplitude_stats | none | knn: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / amplitude_stats | none | knn: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / amplitude_stats | none | random_forest: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / amplitude_stats | none | random_forest: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / amplitude_stats | none | svm: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / amplitude_stats | none | svm: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / amplitude_stats+paper_beamforming | mrmr | knn: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / amplitude_stats+paper_beamforming | mrmr | knn: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / amplitude_stats+paper_beamforming | mrmr | random_forest: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / amplitude_stats+paper_beamforming | mrmr | random_forest: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / amplitude_stats+paper_beamforming | mrmr | svm: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / amplitude_stats+paper_beamforming | mrmr | svm: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / amplitude_stats+paper_beamforming | none | knn: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / amplitude_stats+paper_beamforming | none | knn: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / amplitude_stats+paper_beamforming | none | random_forest: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / amplitude_stats+paper_beamforming | none | random_forest: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / amplitude_stats+paper_beamforming | none | svm: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / amplitude_stats+paper_beamforming | none | svm: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / paper_beamforming | mrmr | knn: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / paper_beamforming | mrmr | knn: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / paper_beamforming | mrmr | random_forest: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / paper_beamforming | mrmr | random_forest: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / paper_beamforming | mrmr | svm: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / paper_beamforming | mrmr | svm: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / paper_beamforming | none | knn: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / paper_beamforming | none | knn: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / paper_beamforming | none | random_forest: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / paper_beamforming | none | random_forest: single test recording for standing, sit_stand, arm_gym
+* bedroom→laboratory / paper_beamforming | none | svm: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* bedroom→living_room / paper_beamforming | none | svm: single test recording for standing, sit_stand, arm_gym
+
+amplitude_stats | mrmr | knn / bedroom→laboratory: csi-bench run runs/padova/room_holdout/amplitude_stats-mrmr-knn-bedroom_to_laboratory-w50--724e3b38dc22/config.yaml
+amplitude_stats | mrmr | knn / bedroom→living_room: csi-bench run runs/padova/room_holdout/amplitude_stats-mrmr-knn-bedroom_to_living_room-w50--f02eb20651ed/config.yaml
+amplitude_stats | mrmr | random_forest / bedroom→laboratory: csi-bench run runs/padova/room_holdout/amplitude_stats-mrmr-random_forest-bedroom_to_laboratory-w50--aa8343e9836f/config.yaml
+amplitude_stats | mrmr | random_forest / bedroom→living_room: csi-bench run runs/padova/room_holdout/amplitude_stats-mrmr-random_forest-bedroom_to_living_room-w50--569d8395c94e/config.yaml
+amplitude_stats | mrmr | svm / bedroom→laboratory: csi-bench run runs/padova/room_holdout/amplitude_stats-mrmr-svm-bedroom_to_laboratory-w50--9ccd4f5bc68f/config.yaml
+amplitude_stats | mrmr | svm / bedroom→living_room: csi-bench run runs/padova/room_holdout/amplitude_stats-mrmr-svm-bedroom_to_living_room-w50--c5d6e3e7981b/config.yaml
+amplitude_stats | none | knn / bedroom→laboratory: csi-bench run runs/padova/room_holdout/amplitude_stats-none-knn-bedroom_to_laboratory-w50--371d1bcf71f7/config.yaml
+amplitude_stats | none | knn / bedroom→living_room: csi-bench run runs/padova/room_holdout/amplitude_stats-none-knn-bedroom_to_living_room-w50--1561d4a49e83/config.yaml
+amplitude_stats | none | random_forest / bedroom→laboratory: csi-bench run runs/padova/room_holdout/amplitude_stats-none-random_forest-bedroom_to_laboratory-w50--1e3250105bde/config.yaml
+amplitude_stats | none | random_forest / bedroom→living_room: csi-bench run runs/padova/room_holdout/amplitude_stats-none-random_forest-bedroom_to_living_room-w50--9237fd78b6e7/config.yaml
+amplitude_stats | none | svm / bedroom→laboratory: csi-bench run runs/padova/room_holdout/amplitude_stats-none-svm-bedroom_to_laboratory-w50--b3f42244c0a9/config.yaml
+amplitude_stats | none | svm / bedroom→living_room: csi-bench run runs/padova/room_holdout/amplitude_stats-none-svm-bedroom_to_living_room-w50--91e284c1ecee/config.yaml
+amplitude_stats+paper_beamforming | mrmr | knn / bedroom→laboratory: csi-bench run runs/padova/room_holdout/amplitude_stats+paper_beamforming-mrmr-knn-bedroom_to_laboratory-w50--e684a9a3215a/config.yaml
+amplitude_stats+paper_beamforming | mrmr | knn / bedroom→living_room: csi-bench run runs/padova/room_holdout/amplitude_stats+paper_beamforming-mrmr-knn-bedroom_to_living_room-w50--97c17d3bfa63/config.yaml
+amplitude_stats+paper_beamforming | mrmr | random_forest / bedroom→laboratory: csi-bench run runs/padova/room_holdout/amplitude_stats+paper_beamforming-mrmr-random_forest-bedroom_to_laboratory-w50--9e9d348c9201/config.yaml
+amplitude_stats+paper_beamforming | mrmr | random_forest / bedroom→living_room: csi-bench run runs/padova/room_holdout/amplitude_stats+paper_beamforming-mrmr-random_forest-bedroom_to_living_room-w50--b33e2ad8ecea/config.yaml
+amplitude_stats+paper_beamforming | mrmr | svm / bedroom→laboratory: csi-bench run runs/padova/room_holdout/amplitude_stats+paper_beamforming-mrmr-svm-bedroom_to_laboratory-w50--775941291111/config.yaml
+amplitude_stats+paper_beamforming | mrmr | svm / bedroom→living_room: csi-bench run runs/padova/room_holdout/amplitude_stats+paper_beamforming-mrmr-svm-bedroom_to_living_room-w50--0c04a9cf35ba/config.yaml
+amplitude_stats+paper_beamforming | none | knn / bedroom→laboratory: csi-bench run runs/padova/room_holdout/amplitude_stats+paper_beamforming-none-knn-bedroom_to_laboratory-w50--b949dea0e487/config.yaml
+amplitude_stats+paper_beamforming | none | knn / bedroom→living_room: csi-bench run runs/padova/room_holdout/amplitude_stats+paper_beamforming-none-knn-bedroom_to_living_room-w50--965f64652c9f/config.yaml
+amplitude_stats+paper_beamforming | none | random_forest / bedroom→laboratory: csi-bench run runs/padova/room_holdout/amplitude_stats+paper_beamforming-none-random_forest-bedroom_to_laboratory-w50--05a8f72deb42/config.yaml
+amplitude_stats+paper_beamforming | none | random_forest / bedroom→living_room: csi-bench run runs/padova/room_holdout/amplitude_stats+paper_beamforming-none-random_forest-bedroom_to_living_room-w50--ffc5dc025f35/config.yaml
+amplitude_stats+paper_beamforming | none | svm / bedroom→laboratory: csi-bench run runs/padova/room_holdout/amplitude_stats+paper_beamforming-none-svm-bedroom_to_laboratory-w50--3448a5869657/config.yaml
+amplitude_stats+paper_beamforming | none | svm / bedroom→living_room: csi-bench run runs/padova/room_holdout/amplitude_stats+paper_beamforming-none-svm-bedroom_to_living_room-w50--eee32e88eb18/config.yaml
+paper_beamforming | mrmr | knn / bedroom→laboratory: csi-bench run runs/padova/room_holdout/paper_beamforming-mrmr-knn-bedroom_to_laboratory-w50--663d2a0b0779/config.yaml
+paper_beamforming | mrmr | knn / bedroom→living_room: csi-bench run runs/padova/room_holdout/paper_beamforming-mrmr-knn-bedroom_to_living_room-w50--9c5f8402e520/config.yaml
+paper_beamforming | mrmr | random_forest / bedroom→laboratory: csi-bench run runs/padova/room_holdout/paper_beamforming-mrmr-random_forest-bedroom_to_laboratory-w50--dc494a1274ca/config.yaml
+paper_beamforming | mrmr | random_forest / bedroom→living_room: csi-bench run runs/padova/room_holdout/paper_beamforming-mrmr-random_forest-bedroom_to_living_room-w50--2c9e782ebf4e/config.yaml
+paper_beamforming | mrmr | svm / bedroom→laboratory: csi-bench run runs/padova/room_holdout/paper_beamforming-mrmr-svm-bedroom_to_laboratory-w50--0b6c272bf5f4/config.yaml
+paper_beamforming | mrmr | svm / bedroom→living_room: csi-bench run runs/padova/room_holdout/paper_beamforming-mrmr-svm-bedroom_to_living_room-w50--aa7c8aa464fe/config.yaml
+paper_beamforming | none | knn / bedroom→laboratory: csi-bench run runs/padova/room_holdout/paper_beamforming-none-knn-bedroom_to_laboratory-w50--2b4f30b0145a/config.yaml
+paper_beamforming | none | knn / bedroom→living_room: csi-bench run runs/padova/room_holdout/paper_beamforming-none-knn-bedroom_to_living_room-w50--f56ec02faa1b/config.yaml
+paper_beamforming | none | random_forest / bedroom→laboratory: csi-bench run runs/padova/room_holdout/paper_beamforming-none-random_forest-bedroom_to_laboratory-w50--b7af3fc873f1/config.yaml
+paper_beamforming | none | random_forest / bedroom→living_room: csi-bench run runs/padova/room_holdout/paper_beamforming-none-random_forest-bedroom_to_living_room-w50--dcd92fd233c3/config.yaml
+paper_beamforming | none | svm / bedroom→laboratory: csi-bench run runs/padova/room_holdout/paper_beamforming-none-svm-bedroom_to_laboratory-w50--fe6c6e743a13/config.yaml
+paper_beamforming | none | svm / bedroom→living_room: csi-bench run runs/padova/room_holdout/paper_beamforming-none-svm-bedroom_to_living_room-w50--9796f9a70fcc/config.yaml
+
+Feature-selection stability (fraction of selections)
+
+amplitude_stats | mrmr | knn / bedroom→laboratory (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | knn / bedroom→living_room (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | random_forest / bedroom→laboratory (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | random_forest / bedroom→living_room (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | svm / bedroom→laboratory (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | svm / bedroom→living_room (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats+paper_beamforming | mrmr | knn / bedroom→laboratory (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+amplitude_stats+paper_beamforming | mrmr | knn / bedroom→living_room (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+amplitude_stats+paper_beamforming | mrmr | random_forest / bedroom→laboratory (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+amplitude_stats+paper_beamforming | mrmr | random_forest / bedroom→living_room (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+amplitude_stats+paper_beamforming | mrmr | svm / bedroom→laboratory (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+amplitude_stats+paper_beamforming | mrmr | svm / bedroom→living_room (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+paper_beamforming | mrmr | knn / bedroom→laboratory (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+paper_beamforming | mrmr | knn / bedroom→living_room (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+paper_beamforming | mrmr | random_forest / bedroom→laboratory (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+paper_beamforming | mrmr | random_forest / bedroom→living_room (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+paper_beamforming | mrmr | svm / bedroom→laboratory (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+paper_beamforming | mrmr | svm / bedroom→living_room (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+
+padova / time_block
+===================
+
+Comparison (test score of the variant with the best tuning-stage val F1)
+
+method                                                    bedroom                                           laboratory                                          living_room
+amplitude_stats | mrmr | knn                              F1 35.89 [32.52, 38.94] acc 39.05 [35.23, 43.20]  F1 54.82 [51.72, 57.73] acc 55.26 [52.63, 57.87] *  F1 45.15 [40.25, 49.81] acc 46.82 [41.96, 51.65] *
+amplitude_stats | mrmr | random_forest                    F1 35.74 [32.51, 38.63] acc 37.96 [34.24, 42.18]  F1 54.33 [51.06, 57.41] acc 54.61 [51.79, 57.42] *  F1 46.68 [39.67, 52.98] acc 49.22 [41.94, 56.47] *
+amplitude_stats | mrmr | svm                              F1 31.34 [25.54, 36.63] acc 34.52 [27.91, 41.29]  F1 53.49 [47.40, 58.53] acc 54.05 [49.28, 58.80] *  F1 44.09 [37.72, 50.32] acc 47.13 [40.59, 53.75] *
+amplitude_stats | none | knn                              F1 35.89 [32.52, 38.94] acc 39.05 [35.23, 43.20]  F1 54.82 [51.72, 57.73] acc 55.26 [52.63, 57.87] *  F1 45.15 [40.25, 49.81] acc 46.82 [41.96, 51.65] *
+amplitude_stats | none | random_forest                    F1 35.61 [32.40, 38.42] acc 37.81 [34.04, 42.07]  F1 53.39 [50.55, 56.11] acc 53.57 [51.08, 56.05] *  F1 45.75 [40.54, 50.70] acc 47.14 [41.92, 52.39] *
+amplitude_stats | none | svm                              F1 31.34 [25.54, 36.63] acc 34.52 [27.91, 41.29]  F1 53.49 [47.40, 58.53] acc 54.05 [49.28, 58.80] *  F1 44.09 [37.72, 50.32] acc 47.13 [40.59, 53.75] *
+amplitude_stats+paper_beamforming | mrmr | knn            F1 32.03 [29.39, 34.29] acc 34.52 [31.23, 37.99]  F1 54.75 [50.01, 58.95] acc 54.33 [49.75, 58.88] *  F1 48.29 [46.66, 50.27] acc 48.52 [45.40, 51.61] *
+amplitude_stats+paper_beamforming | mrmr | random_forest  F1 37.01 [33.29, 40.13] acc 39.85 [36.10, 43.93]  F1 59.37 [56.56, 62.49] acc 59.33 [56.79, 62.44] *  F1 50.17 [47.87, 52.59] acc 50.20 [46.51, 53.90] *
+amplitude_stats+paper_beamforming | mrmr | svm            F1 28.59 [24.66, 32.22] acc 33.20 [28.93, 37.49]  F1 55.58 [50.00, 60.42] acc 54.99 [49.72, 60.24] *  F1 53.73 [49.82, 57.57] acc 53.69 [47.85, 59.52] *
+amplitude_stats+paper_beamforming | none | knn            F1 55.43 [51.08, 58.96] acc 57.54 [53.00, 62.09]  F1 72.83 [69.77, 75.99] acc 72.54 [69.70, 75.81] *  F1 57.70 [53.39, 61.81] acc 58.52 [54.05, 62.97] *
+amplitude_stats+paper_beamforming | none | random_forest  F1 61.87 [57.94, 65.32] acc 63.40 [59.21, 67.53]  F1 78.16 [76.15, 79.42] acc 78.27 [76.31, 79.51] *  F1 66.15 [62.71, 69.53] acc 65.42 [61.43, 69.45] *
+amplitude_stats+paper_beamforming | none | svm            F1 58.25 [53.63, 62.05] acc 59.90 [55.14, 64.65]  F1 76.69 [74.89, 78.50] acc 76.62 [74.89, 78.45] *  F1 64.57 [60.55, 68.55] acc 64.67 [60.18, 69.27] *
+paper_beamforming | mrmr | knn                            F1 32.03 [29.39, 34.29] acc 34.52 [31.23, 37.99]  F1 54.01 [50.33, 57.39] acc 53.66 [50.11, 57.19] *  F1 50.25 [48.68, 52.09] acc 50.10 [47.69, 52.60] *
+paper_beamforming | mrmr | random_forest                  F1 37.01 [33.29, 40.13] acc 39.85 [36.10, 43.93]  F1 59.37 [56.56, 62.49] acc 59.33 [56.79, 62.44] *  F1 52.13 [49.80, 54.70] acc 52.16 [48.93, 55.19] *
+paper_beamforming | mrmr | svm                            F1 28.59 [24.66, 32.22] acc 33.20 [28.93, 37.49]  F1 54.65 [50.32, 58.61] acc 54.35 [50.31, 58.38] *  F1 53.83 [50.90, 57.01] acc 53.50 [49.27, 57.93] *
+paper_beamforming | none | knn                            F1 44.16 [39.93, 47.94] acc 46.61 [42.17, 51.67]  F1 65.20 [62.30, 67.98] acc 64.70 [61.90, 67.77] *  F1 57.06 [54.17, 59.93] acc 56.87 [54.13, 59.57] *
+paper_beamforming | none | random_forest                  F1 52.50 [48.43, 55.96] acc 54.47 [50.02, 59.33]  F1 70.98 [69.40, 72.62] acc 70.99 [69.23, 72.75] *  F1 61.71 [57.49, 65.82] acc 61.03 [56.57, 65.31] *
+paper_beamforming | none | svm                            F1 45.58 [40.38, 49.95] acc 48.13 [42.93, 53.41]  F1 67.49 [65.76, 69.59] acc 66.98 [65.28, 69.28] *  F1 59.88 [56.71, 63.30] acc 58.99 [55.85, 62.27] *
+* laboratory / amplitude_stats | mrmr | knn: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / amplitude_stats | mrmr | knn: single test recording for standing, sit_stand, arm_gym
+* laboratory / amplitude_stats | mrmr | random_forest: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / amplitude_stats | mrmr | random_forest: single test recording for standing, sit_stand, arm_gym
+* laboratory / amplitude_stats | mrmr | svm: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / amplitude_stats | mrmr | svm: single test recording for standing, sit_stand, arm_gym
+* laboratory / amplitude_stats | none | knn: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / amplitude_stats | none | knn: single test recording for standing, sit_stand, arm_gym
+* laboratory / amplitude_stats | none | random_forest: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / amplitude_stats | none | random_forest: single test recording for standing, sit_stand, arm_gym
+* laboratory / amplitude_stats | none | svm: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / amplitude_stats | none | svm: single test recording for standing, sit_stand, arm_gym
+* laboratory / amplitude_stats+paper_beamforming | mrmr | knn: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / amplitude_stats+paper_beamforming | mrmr | knn: single test recording for standing, sit_stand, arm_gym
+* laboratory / amplitude_stats+paper_beamforming | mrmr | random_forest: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / amplitude_stats+paper_beamforming | mrmr | random_forest: single test recording for standing, sit_stand, arm_gym
+* laboratory / amplitude_stats+paper_beamforming | mrmr | svm: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / amplitude_stats+paper_beamforming | mrmr | svm: single test recording for standing, sit_stand, arm_gym
+* laboratory / amplitude_stats+paper_beamforming | none | knn: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / amplitude_stats+paper_beamforming | none | knn: single test recording for standing, sit_stand, arm_gym
+* laboratory / amplitude_stats+paper_beamforming | none | random_forest: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / amplitude_stats+paper_beamforming | none | random_forest: single test recording for standing, sit_stand, arm_gym
+* laboratory / amplitude_stats+paper_beamforming | none | svm: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / amplitude_stats+paper_beamforming | none | svm: single test recording for standing, sit_stand, arm_gym
+* laboratory / paper_beamforming | mrmr | knn: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / paper_beamforming | mrmr | knn: single test recording for standing, sit_stand, arm_gym
+* laboratory / paper_beamforming | mrmr | random_forest: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / paper_beamforming | mrmr | random_forest: single test recording for standing, sit_stand, arm_gym
+* laboratory / paper_beamforming | mrmr | svm: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / paper_beamforming | mrmr | svm: single test recording for standing, sit_stand, arm_gym
+* laboratory / paper_beamforming | none | knn: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / paper_beamforming | none | knn: single test recording for standing, sit_stand, arm_gym
+* laboratory / paper_beamforming | none | random_forest: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / paper_beamforming | none | random_forest: single test recording for standing, sit_stand, arm_gym
+* laboratory / paper_beamforming | none | svm: single test recording for empty, walking, running, standing, sit_stand, arm_gym
+* living_room / paper_beamforming | none | svm: single test recording for standing, sit_stand, arm_gym
+
+amplitude_stats | mrmr | knn / bedroom: csi-bench run runs/padova/time_block/amplitude_stats-mrmr-knn-bedroom-w50--6cf56bba921d/config.yaml
+amplitude_stats | mrmr | knn / laboratory: csi-bench run runs/padova/time_block/amplitude_stats-mrmr-knn-laboratory-w50--0e3e16a47279/config.yaml
+amplitude_stats | mrmr | knn / living_room: csi-bench run runs/padova/time_block/amplitude_stats-mrmr-knn-living_room-w50--4ef2edd48e93/config.yaml
+amplitude_stats | mrmr | random_forest / bedroom: csi-bench run runs/padova/time_block/amplitude_stats-mrmr-random_forest-bedroom-w50--f63ac15189fa/config.yaml
+amplitude_stats | mrmr | random_forest / laboratory: csi-bench run runs/padova/time_block/amplitude_stats-mrmr-random_forest-laboratory-w50--698f7c194ebe/config.yaml
+amplitude_stats | mrmr | random_forest / living_room: csi-bench run runs/padova/time_block/amplitude_stats-mrmr-random_forest-living_room-w50--f7fe2300f38c/config.yaml
+amplitude_stats | mrmr | svm / bedroom: csi-bench run runs/padova/time_block/amplitude_stats-mrmr-svm-bedroom-w50--fc30021610e4/config.yaml
+amplitude_stats | mrmr | svm / laboratory: csi-bench run runs/padova/time_block/amplitude_stats-mrmr-svm-laboratory-w50--d39a75db9621/config.yaml
+amplitude_stats | mrmr | svm / living_room: csi-bench run runs/padova/time_block/amplitude_stats-mrmr-svm-living_room-w50--1aa2cdf843f3/config.yaml
+amplitude_stats | none | knn / bedroom: csi-bench run runs/padova/time_block/amplitude_stats-none-knn-bedroom-w50--7f059786c6ec/config.yaml
+amplitude_stats | none | knn / laboratory: csi-bench run runs/padova/time_block/amplitude_stats-none-knn-laboratory-w50--c8c11507979a/config.yaml
+amplitude_stats | none | knn / living_room: csi-bench run runs/padova/time_block/amplitude_stats-none-knn-living_room-w50--91fc5c2a8774/config.yaml
+amplitude_stats | none | random_forest / bedroom: csi-bench run runs/padova/time_block/amplitude_stats-none-random_forest-bedroom-w50--db4300cd342a/config.yaml
+amplitude_stats | none | random_forest / laboratory: csi-bench run runs/padova/time_block/amplitude_stats-none-random_forest-laboratory-w40--fc778fdcae5c/config.yaml
+amplitude_stats | none | random_forest / living_room: csi-bench run runs/padova/time_block/amplitude_stats-none-random_forest-living_room-w50--a4c9460f6412/config.yaml
+amplitude_stats | none | svm / bedroom: csi-bench run runs/padova/time_block/amplitude_stats-none-svm-bedroom-w50--247c66a5efbe/config.yaml
+amplitude_stats | none | svm / laboratory: csi-bench run runs/padova/time_block/amplitude_stats-none-svm-laboratory-w50--034bace34bdd/config.yaml
+amplitude_stats | none | svm / living_room: csi-bench run runs/padova/time_block/amplitude_stats-none-svm-living_room-w50--981218167b7f/config.yaml
+amplitude_stats+paper_beamforming | mrmr | knn / bedroom: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-mrmr-knn-bedroom-w50--a657c7786c66/config.yaml
+amplitude_stats+paper_beamforming | mrmr | knn / laboratory: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-mrmr-knn-laboratory-w20--232fffe30f7e/config.yaml
+amplitude_stats+paper_beamforming | mrmr | knn / living_room: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-mrmr-knn-living_room-w50--5b5d0d2f9b87/config.yaml
+amplitude_stats+paper_beamforming | mrmr | random_forest / bedroom: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-mrmr-random_forest-bedroom-w50--d980a89a8a31/config.yaml
+amplitude_stats+paper_beamforming | mrmr | random_forest / laboratory: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-mrmr-random_forest-laboratory-w50--459077413fc4/config.yaml
+amplitude_stats+paper_beamforming | mrmr | random_forest / living_room: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-mrmr-random_forest-living_room-w50--61872bdafaef/config.yaml
+amplitude_stats+paper_beamforming | mrmr | svm / bedroom: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-mrmr-svm-bedroom-w50--af2217c3bc95/config.yaml
+amplitude_stats+paper_beamforming | mrmr | svm / laboratory: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-mrmr-svm-laboratory-w20--8e82eff32a38/config.yaml
+amplitude_stats+paper_beamforming | mrmr | svm / living_room: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-mrmr-svm-living_room-w50--f305d2fa1419/config.yaml
+amplitude_stats+paper_beamforming | none | knn / bedroom: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-none-knn-bedroom-w50--03bdc5abc5b4/config.yaml
+amplitude_stats+paper_beamforming | none | knn / laboratory: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-none-knn-laboratory-w50--0b2981a0be67/config.yaml
+amplitude_stats+paper_beamforming | none | knn / living_room: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-none-knn-living_room-w50--ca1517962001/config.yaml
+amplitude_stats+paper_beamforming | none | random_forest / bedroom: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-none-random_forest-bedroom-w50--1ce02b3cb69e/config.yaml
+amplitude_stats+paper_beamforming | none | random_forest / laboratory: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-none-random_forest-laboratory-w50--4b7a2fe14135/config.yaml
+amplitude_stats+paper_beamforming | none | random_forest / living_room: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-none-random_forest-living_room-w50--f665ba4eacaf/config.yaml
+amplitude_stats+paper_beamforming | none | svm / bedroom: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-none-svm-bedroom-w50--573eed3bb73e/config.yaml
+amplitude_stats+paper_beamforming | none | svm / laboratory: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-none-svm-laboratory-w50--c3df21529685/config.yaml
+amplitude_stats+paper_beamforming | none | svm / living_room: csi-bench run runs/padova/time_block/amplitude_stats+paper_beamforming-none-svm-living_room-w50--07aef0c98e02/config.yaml
+paper_beamforming | mrmr | knn / bedroom: csi-bench run runs/padova/time_block/paper_beamforming-mrmr-knn-bedroom-w50--b553eaed683a/config.yaml
+paper_beamforming | mrmr | knn / laboratory: csi-bench run runs/padova/time_block/paper_beamforming-mrmr-knn-laboratory-w20--00ef53ad4798/config.yaml
+paper_beamforming | mrmr | knn / living_room: csi-bench run runs/padova/time_block/paper_beamforming-mrmr-knn-living_room-w50--0bf291ede734/config.yaml
+paper_beamforming | mrmr | random_forest / bedroom: csi-bench run runs/padova/time_block/paper_beamforming-mrmr-random_forest-bedroom-w50--b14900f730a2/config.yaml
+paper_beamforming | mrmr | random_forest / laboratory: csi-bench run runs/padova/time_block/paper_beamforming-mrmr-random_forest-laboratory-w50--18019d94c668/config.yaml
+paper_beamforming | mrmr | random_forest / living_room: csi-bench run runs/padova/time_block/paper_beamforming-mrmr-random_forest-living_room-w50--ba27ea1bd3ed/config.yaml
+paper_beamforming | mrmr | svm / bedroom: csi-bench run runs/padova/time_block/paper_beamforming-mrmr-svm-bedroom-w50--d11c0d6786ad/config.yaml
+paper_beamforming | mrmr | svm / laboratory: csi-bench run runs/padova/time_block/paper_beamforming-mrmr-svm-laboratory-w20--4419576a9994/config.yaml
+paper_beamforming | mrmr | svm / living_room: csi-bench run runs/padova/time_block/paper_beamforming-mrmr-svm-living_room-w50--d04f956a8494/config.yaml
+paper_beamforming | none | knn / bedroom: csi-bench run runs/padova/time_block/paper_beamforming-none-knn-bedroom-w50--10b50b2a67fb/config.yaml
+paper_beamforming | none | knn / laboratory: csi-bench run runs/padova/time_block/paper_beamforming-none-knn-laboratory-w50--4ac3d755d031/config.yaml
+paper_beamforming | none | knn / living_room: csi-bench run runs/padova/time_block/paper_beamforming-none-knn-living_room-w50--ebee8de23da6/config.yaml
+paper_beamforming | none | random_forest / bedroom: csi-bench run runs/padova/time_block/paper_beamforming-none-random_forest-bedroom-w50--0b1c33258482/config.yaml
+paper_beamforming | none | random_forest / laboratory: csi-bench run runs/padova/time_block/paper_beamforming-none-random_forest-laboratory-w50--a30a65b86019/config.yaml
+paper_beamforming | none | random_forest / living_room: csi-bench run runs/padova/time_block/paper_beamforming-none-random_forest-living_room-w50--810b9cac7de3/config.yaml
+paper_beamforming | none | svm / bedroom: csi-bench run runs/padova/time_block/paper_beamforming-none-svm-bedroom-w50--b4367bc0a990/config.yaml
+paper_beamforming | none | svm / laboratory: csi-bench run runs/padova/time_block/paper_beamforming-none-svm-laboratory-w50--23fe3e33e4be/config.yaml
+paper_beamforming | none | svm / living_room: csi-bench run runs/padova/time_block/paper_beamforming-none-svm-living_room-w50--723d365508cc/config.yaml
+
+Feature-selection stability (fraction of selections)
+
+amplitude_stats | mrmr | knn / bedroom (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | knn / laboratory (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | knn / living_room (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | random_forest / bedroom (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | random_forest / laboratory (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | random_forest / living_room (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | svm / bedroom (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | svm / laboratory (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | svm / living_room (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats+paper_beamforming | mrmr | knn / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  amplitude_stats.std  0.25
+amplitude_stats+paper_beamforming | mrmr | knn / laboratory (4 selections)
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.distance_mean  0.50
+  paper_beamforming.doppler_integral_mean  0.50
+  paper_beamforming.flatness_mean  0.50
+  paper_beamforming.flatness_theta_var  0.50
+  amplitude_stats.mean_power  0.25
+amplitude_stats+paper_beamforming | mrmr | knn / living_room (4 selections)
+  amplitude_stats.flatness  1.00
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_mean  1.00
+amplitude_stats+paper_beamforming | mrmr | random_forest / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  amplitude_stats.std  0.25
+amplitude_stats+paper_beamforming | mrmr | random_forest / laboratory (4 selections)
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.distance_mean  0.50
+  paper_beamforming.doppler_integral_mean  0.50
+  paper_beamforming.flatness_mean  0.50
+  paper_beamforming.flatness_theta_var  0.50
+  amplitude_stats.mean_power  0.25
+amplitude_stats+paper_beamforming | mrmr | random_forest / living_room (4 selections)
+  amplitude_stats.flatness  1.00
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_mean  1.00
+amplitude_stats+paper_beamforming | mrmr | svm / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  amplitude_stats.std  0.25
+amplitude_stats+paper_beamforming | mrmr | svm / laboratory (4 selections)
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.distance_mean  0.50
+  paper_beamforming.doppler_integral_mean  0.50
+  paper_beamforming.flatness_mean  0.50
+  paper_beamforming.flatness_theta_var  0.50
+  amplitude_stats.mean_power  0.25
+amplitude_stats+paper_beamforming | mrmr | svm / living_room (4 selections)
+  amplitude_stats.flatness  1.00
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_mean  1.00
+paper_beamforming | mrmr | knn / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+paper_beamforming | mrmr | knn / laboratory (4 selections)
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.doppler_integral_mean  0.75
+  paper_beamforming.distance_mean  0.50
+  paper_beamforming.flatness_mean  0.50
+  paper_beamforming.flatness_theta_var  0.50
+paper_beamforming | mrmr | knn / living_room (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.flatness_mean  1.00
+paper_beamforming | mrmr | random_forest / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+paper_beamforming | mrmr | random_forest / laboratory (4 selections)
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.doppler_integral_mean  0.75
+  paper_beamforming.distance_mean  0.50
+  paper_beamforming.flatness_mean  0.50
+  paper_beamforming.flatness_theta_var  0.50
+paper_beamforming | mrmr | random_forest / living_room (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.flatness_mean  1.00
+paper_beamforming | mrmr | svm / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+paper_beamforming | mrmr | svm / laboratory (4 selections)
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.doppler_integral_mean  0.75
+  paper_beamforming.distance_mean  0.50
+  paper_beamforming.flatness_mean  0.50
+  paper_beamforming.flatness_theta_var  0.50
+paper_beamforming | mrmr | svm / living_room (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.flatness_mean  1.00
+
+padova_s1 / time_block
+======================
+
+Comparison (test score of the variant with the best tuning-stage val F1)
+
+method                                                    bedroom
+amplitude_stats | mrmr | knn                              F1 44.00 [39.30, 48.67] acc 44.23 [39.82, 49.07]
+amplitude_stats | mrmr | random_forest                    F1 44.16 [37.92, 50.48] acc 44.29 [38.46, 50.80]
+amplitude_stats | mrmr | svm                              F1 46.35 [39.73, 52.77] acc 46.93 [40.79, 53.22]
+amplitude_stats | none | knn                              F1 44.00 [39.30, 48.67] acc 44.23 [39.82, 49.07]
+amplitude_stats | none | random_forest                    F1 43.90 [37.52, 50.19] acc 44.03 [38.18, 50.50]
+amplitude_stats | none | svm                              F1 46.35 [39.73, 52.77] acc 46.93 [40.79, 53.22]
+amplitude_stats+paper_beamforming | mrmr | knn            F1 36.48 [33.21, 39.87] acc 37.03 [33.96, 40.41]
+amplitude_stats+paper_beamforming | mrmr | random_forest  F1 42.61 [37.51, 47.18] acc 43.09 [38.35, 47.66]
+amplitude_stats+paper_beamforming | mrmr | svm            F1 36.15 [30.56, 40.85] acc 37.17 [31.61, 42.46]
+amplitude_stats+paper_beamforming | none | knn            F1 65.88 [59.80, 70.94] acc 65.95 [60.14, 71.16]
+amplitude_stats+paper_beamforming | none | random_forest  F1 69.84 [64.53, 74.73] acc 69.85 [64.79, 74.80]
+amplitude_stats+paper_beamforming | none | svm            F1 68.74 [63.48, 73.36] acc 68.84 [63.72, 73.47]
+paper_beamforming | mrmr | knn                            F1 36.48 [33.21, 39.87] acc 37.03 [33.96, 40.41]
+paper_beamforming | mrmr | random_forest                  F1 42.81 [37.75, 47.64] acc 43.38 [38.91, 47.93]
+paper_beamforming | mrmr | svm                            F1 32.38 [27.12, 37.01] acc 33.76 [28.61, 38.85]
+paper_beamforming | none | knn                            F1 53.17 [48.96, 57.09] acc 53.42 [49.28, 57.44]
+paper_beamforming | none | random_forest                  F1 58.93 [55.59, 62.18] acc 59.02 [55.73, 62.17]
+paper_beamforming | none | svm                            F1 55.65 [51.46, 59.62] acc 56.09 [51.97, 60.09]
+
+amplitude_stats | mrmr | knn / bedroom: csi-bench run runs/padova_s1/time_block/amplitude_stats-mrmr-knn-bedroom-w50--88e4f9c8b6c9/config.yaml
+amplitude_stats | mrmr | random_forest / bedroom: csi-bench run runs/padova_s1/time_block/amplitude_stats-mrmr-random_forest-bedroom-w50--882c2a898297/config.yaml
+amplitude_stats | mrmr | svm / bedroom: csi-bench run runs/padova_s1/time_block/amplitude_stats-mrmr-svm-bedroom-w50--126ee8b9724e/config.yaml
+amplitude_stats | none | knn / bedroom: csi-bench run runs/padova_s1/time_block/amplitude_stats-none-knn-bedroom-w50--5e6c4650f7f5/config.yaml
+amplitude_stats | none | random_forest / bedroom: csi-bench run runs/padova_s1/time_block/amplitude_stats-none-random_forest-bedroom-w50--f0c2211bf545/config.yaml
+amplitude_stats | none | svm / bedroom: csi-bench run runs/padova_s1/time_block/amplitude_stats-none-svm-bedroom-w50--b59116791af9/config.yaml
+amplitude_stats+paper_beamforming | mrmr | knn / bedroom: csi-bench run runs/padova_s1/time_block/amplitude_stats+paper_beamforming-mrmr-knn-bedroom-w50--564caae4cc79/config.yaml
+amplitude_stats+paper_beamforming | mrmr | random_forest / bedroom: csi-bench run runs/padova_s1/time_block/amplitude_stats+paper_beamforming-mrmr-random_forest-bedroom-w30--ea604d26a7d8/config.yaml
+amplitude_stats+paper_beamforming | mrmr | svm / bedroom: csi-bench run runs/padova_s1/time_block/amplitude_stats+paper_beamforming-mrmr-svm-bedroom-w30--3ca16c250090/config.yaml
+amplitude_stats+paper_beamforming | none | knn / bedroom: csi-bench run runs/padova_s1/time_block/amplitude_stats+paper_beamforming-none-knn-bedroom-w50--50505ff0007e/config.yaml
+amplitude_stats+paper_beamforming | none | random_forest / bedroom: csi-bench run runs/padova_s1/time_block/amplitude_stats+paper_beamforming-none-random_forest-bedroom-w50--ce87b052d190/config.yaml
+amplitude_stats+paper_beamforming | none | svm / bedroom: csi-bench run runs/padova_s1/time_block/amplitude_stats+paper_beamforming-none-svm-bedroom-w50--b506edd63581/config.yaml
+paper_beamforming | mrmr | knn / bedroom: csi-bench run runs/padova_s1/time_block/paper_beamforming-mrmr-knn-bedroom-w50--ac8d7b632428/config.yaml
+paper_beamforming | mrmr | random_forest / bedroom: csi-bench run runs/padova_s1/time_block/paper_beamforming-mrmr-random_forest-bedroom-w50--774e173a4c1e/config.yaml
+paper_beamforming | mrmr | svm / bedroom: csi-bench run runs/padova_s1/time_block/paper_beamforming-mrmr-svm-bedroom-w20--ebd836804c80/config.yaml
+paper_beamforming | none | knn / bedroom: csi-bench run runs/padova_s1/time_block/paper_beamforming-none-knn-bedroom-w50--db3059179962/config.yaml
+paper_beamforming | none | random_forest / bedroom: csi-bench run runs/padova_s1/time_block/paper_beamforming-none-random_forest-bedroom-w50--672035bdeb69/config.yaml
+paper_beamforming | none | svm / bedroom: csi-bench run runs/padova_s1/time_block/paper_beamforming-none-svm-bedroom-w50--61fc8f91c36c/config.yaml
+
+Feature-selection stability (fraction of selections)
+
+amplitude_stats | mrmr | knn / bedroom (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | random_forest / bedroom (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | svm / bedroom (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats+paper_beamforming | mrmr | knn / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  amplitude_stats.mean_power  0.50
+  paper_beamforming.flatness_theta_var  0.50
+amplitude_stats+paper_beamforming | mrmr | random_forest / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  amplitude_stats.mean_power  0.50
+  paper_beamforming.flatness_theta_var  0.50
+amplitude_stats+paper_beamforming | mrmr | svm / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  amplitude_stats.mean_power  0.50
+  paper_beamforming.flatness_theta_var  0.50
+paper_beamforming | mrmr | knn / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+paper_beamforming | mrmr | random_forest / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+paper_beamforming | mrmr | svm / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+
+padova_sharp / time_block
+=========================
+
+Comparison (test score of the variant with the best tuning-stage val F1)
+
+method                                                    bedroom
+amplitude_stats | mrmr | knn                              F1 62.49 [57.86, 65.95] acc 62.78 [58.02, 66.52]
+amplitude_stats | mrmr | random_forest                    F1 60.93 [57.26, 64.44] acc 60.82 [57.16, 64.54]
+amplitude_stats | mrmr | svm                              F1 61.42 [54.95, 67.09] acc 62.07 [55.91, 67.83]
+amplitude_stats | none | knn                              F1 62.49 [57.86, 65.95] acc 62.78 [58.02, 66.52]
+amplitude_stats | none | random_forest                    F1 60.69 [56.73, 64.14] acc 60.58 [56.65, 64.25]
+amplitude_stats | none | svm                              F1 61.42 [54.95, 67.09] acc 62.07 [55.91, 67.83]
+amplitude_stats+paper_beamforming | mrmr | knn            F1 60.57 [52.12, 67.02] acc 60.79 [53.50, 67.50]
+amplitude_stats+paper_beamforming | mrmr | random_forest  F1 61.72 [52.19, 68.78] acc 61.66 [53.81, 69.19]
+amplitude_stats+paper_beamforming | mrmr | svm            F1 59.32 [50.32, 66.77] acc 59.70 [51.72, 67.73]
+amplitude_stats+paper_beamforming | none | knn            F1 77.00 [73.51, 80.00] acc 77.05 [73.47, 80.10]
+amplitude_stats+paper_beamforming | none | random_forest  F1 81.61 [78.32, 84.60] acc 81.55 [78.28, 84.52]
+amplitude_stats+paper_beamforming | none | svm            F1 80.66 [77.57, 83.58] acc 80.70 [77.69, 83.61]
+paper_beamforming | mrmr | knn                            F1 54.10 [49.07, 59.50] acc 54.31 [49.36, 59.88]
+paper_beamforming | mrmr | random_forest                  F1 59.65 [52.87, 65.79] acc 59.22 [53.04, 65.47]
+paper_beamforming | mrmr | svm                            F1 50.59 [44.28, 55.26] acc 50.45 [43.61, 55.75]
+paper_beamforming | none | knn                            F1 66.62 [62.23, 71.08] acc 66.80 [62.51, 71.13]
+paper_beamforming | none | random_forest                  F1 73.65 [69.40, 77.23] acc 73.56 [69.24, 77.28]
+paper_beamforming | none | svm                            F1 68.84 [64.30, 73.02] acc 68.98 [64.49, 73.15]
+
+amplitude_stats | mrmr | knn / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats-mrmr-knn-bedroom-w50--52c314ff4216/config.yaml
+amplitude_stats | mrmr | random_forest / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats-mrmr-random_forest-bedroom-w50--920941751238/config.yaml
+amplitude_stats | mrmr | svm / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats-mrmr-svm-bedroom-w50--ac0bcacd4e92/config.yaml
+amplitude_stats | none | knn / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats-none-knn-bedroom-w50--1d93df586145/config.yaml
+amplitude_stats | none | random_forest / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats-none-random_forest-bedroom-w50--64aee404e1e9/config.yaml
+amplitude_stats | none | svm / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats-none-svm-bedroom-w50--23f30291a842/config.yaml
+amplitude_stats+paper_beamforming | mrmr | knn / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats+paper_beamforming-mrmr-knn-bedroom-w20--61dad1394fd8/config.yaml
+amplitude_stats+paper_beamforming | mrmr | random_forest / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats+paper_beamforming-mrmr-random_forest-bedroom-w20--f4016dac0c84/config.yaml
+amplitude_stats+paper_beamforming | mrmr | svm / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats+paper_beamforming-mrmr-svm-bedroom-w20--df08da2fc174/config.yaml
+amplitude_stats+paper_beamforming | none | knn / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats+paper_beamforming-none-knn-bedroom-w50--9ce2c5c6ab39/config.yaml
+amplitude_stats+paper_beamforming | none | random_forest / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats+paper_beamforming-none-random_forest-bedroom-w50--8c2adf153f23/config.yaml
+amplitude_stats+paper_beamforming | none | svm / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats+paper_beamforming-none-svm-bedroom-w50--c65d83772215/config.yaml
+paper_beamforming | mrmr | knn / bedroom: csi-bench run runs/padova_sharp/time_block/paper_beamforming-mrmr-knn-bedroom-w50--02e11fccb602/config.yaml
+paper_beamforming | mrmr | random_forest / bedroom: csi-bench run runs/padova_sharp/time_block/paper_beamforming-mrmr-random_forest-bedroom-w50--0ad42d3dd7d1/config.yaml
+paper_beamforming | mrmr | svm / bedroom: csi-bench run runs/padova_sharp/time_block/paper_beamforming-mrmr-svm-bedroom-w20--4473686d1900/config.yaml
+paper_beamforming | none | knn / bedroom: csi-bench run runs/padova_sharp/time_block/paper_beamforming-none-knn-bedroom-w50--6140a840aa6d/config.yaml
+paper_beamforming | none | random_forest / bedroom: csi-bench run runs/padova_sharp/time_block/paper_beamforming-none-random_forest-bedroom-w50--6c300f783ae4/config.yaml
+paper_beamforming | none | svm / bedroom: csi-bench run runs/padova_sharp/time_block/paper_beamforming-none-svm-bedroom-w50--f143ff26b9a8/config.yaml
+
+Feature-selection stability (fraction of selections)
+
+amplitude_stats | mrmr | knn / bedroom (8 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | random_forest / bedroom (8 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | svm / bedroom (8 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats+paper_beamforming | mrmr | knn / bedroom (4 selections)
+  amplitude_stats.mean_power  1.00
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  amplitude_stats.flatness  0.25
+amplitude_stats+paper_beamforming | mrmr | random_forest / bedroom (4 selections)
+  amplitude_stats.mean_power  1.00
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  amplitude_stats.flatness  0.25
+amplitude_stats+paper_beamforming | mrmr | svm / bedroom (4 selections)
+  amplitude_stats.mean_power  1.00
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  0.75
+  amplitude_stats.flatness  0.25
+paper_beamforming | mrmr | knn / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+paper_beamforming | mrmr | random_forest / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+paper_beamforming | mrmr | svm / bedroom (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.flatness_mean  0.25
+
+padova_sharp / time_block, gap_packets 346
+==========================================
+
+Comparison (test score of the variant with the best tuning-stage val F1)
+
+method                                                    bedroom
+amplitude_stats | mrmr | knn                              F1 62.81 [55.30, 69.43] acc 63.22 [56.70, 69.63]
+amplitude_stats | mrmr | random_forest                    F1 63.18 [48.69, 75.12] acc 64.83 [53.70, 75.48]
+amplitude_stats | mrmr | svm                              F1 68.39 [54.28, 78.14] acc 68.51 [57.12, 78.07]
+amplitude_stats | none | knn                              F1 68.60 [61.05, 75.13] acc 68.96 [62.00, 75.61]
+amplitude_stats | none | random_forest                    F1 62.75 [48.25, 74.91] acc 64.37 [53.31, 75.00]
+amplitude_stats | none | svm                              F1 68.39 [54.28, 78.14] acc 68.51 [57.12, 78.07]
+amplitude_stats+paper_beamforming | mrmr | knn            F1 66.12 [60.92, 70.79] acc 67.00 [61.68, 71.92]
+amplitude_stats+paper_beamforming | mrmr | random_forest  F1 67.73 [61.71, 72.95] acc 68.47 [62.38, 73.71]
+amplitude_stats+paper_beamforming | mrmr | svm            F1 67.32 [60.02, 74.09] acc 67.73 [59.95, 74.91]
+amplitude_stats+paper_beamforming | none | knn            F1 85.37 [80.58, 90.60] acc 85.74 [81.29, 90.65]
+amplitude_stats+paper_beamforming | none | random_forest  F1 89.40 [83.94, 93.70] acc 89.50 [84.43, 93.78]
+amplitude_stats+paper_beamforming | none | svm            F1 89.84 [85.79, 93.41] acc 89.97 [85.99, 93.50]
+paper_beamforming | mrmr | knn                            F1 69.22 [62.49, 75.56] acc 69.18 [62.29, 75.84]
+paper_beamforming | mrmr | random_forest                  F1 73.77 [66.94, 79.55] acc 73.87 [67.01, 80.07]
+paper_beamforming | mrmr | svm                            F1 66.90 [54.83, 75.74] acc 67.09 [56.82, 76.17]
+paper_beamforming | none | knn                            F1 81.58 [75.80, 87.11] acc 82.04 [76.61, 87.27]
+paper_beamforming | none | random_forest                  F1 85.40 [79.72, 90.29] acc 85.59 [79.97, 90.51]
+paper_beamforming | none | svm                            F1 87.44 [83.67, 91.00] acc 87.83 [84.30, 91.23]
+
+amplitude_stats | mrmr | knn / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats-mrmr-knn-bedroom-w346--d5bce9f5c16b/config.yaml
+amplitude_stats | mrmr | random_forest / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats-mrmr-random_forest-bedroom-w346--30ecd5d56569/config.yaml
+amplitude_stats | mrmr | svm / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats-mrmr-svm-bedroom-w346--0b0ff8a28ea2/config.yaml
+amplitude_stats | none | knn / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats-none-knn-bedroom-w346--22f761ca38c8/config.yaml
+amplitude_stats | none | random_forest / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats-none-random_forest-bedroom-w346--5052bd5247b6/config.yaml
+amplitude_stats | none | svm / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats-none-svm-bedroom-w346--fc771050e226/config.yaml
+amplitude_stats+paper_beamforming | mrmr | knn / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats+paper_beamforming-mrmr-knn-bedroom-w346--23665d72d527/config.yaml
+amplitude_stats+paper_beamforming | mrmr | random_forest / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats+paper_beamforming-mrmr-random_forest-bedroom-w346--cffd65c5b4f8/config.yaml
+amplitude_stats+paper_beamforming | mrmr | svm / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats+paper_beamforming-mrmr-svm-bedroom-w346--1e22ee2b219f/config.yaml
+amplitude_stats+paper_beamforming | none | knn / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats+paper_beamforming-none-knn-bedroom-w346--b4a9b2e0a2af/config.yaml
+amplitude_stats+paper_beamforming | none | random_forest / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats+paper_beamforming-none-random_forest-bedroom-w346--dfdb290945d0/config.yaml
+amplitude_stats+paper_beamforming | none | svm / bedroom: csi-bench run runs/padova_sharp/time_block/amplitude_stats+paper_beamforming-none-svm-bedroom-w346--399c8eac10d0/config.yaml
+paper_beamforming | mrmr | knn / bedroom: csi-bench run runs/padova_sharp/time_block/paper_beamforming-mrmr-knn-bedroom-w346--d5e65d25184c/config.yaml
+paper_beamforming | mrmr | random_forest / bedroom: csi-bench run runs/padova_sharp/time_block/paper_beamforming-mrmr-random_forest-bedroom-w346--f8178f9b7d41/config.yaml
+paper_beamforming | mrmr | svm / bedroom: csi-bench run runs/padova_sharp/time_block/paper_beamforming-mrmr-svm-bedroom-w346--e3ab97c27b8f/config.yaml
+paper_beamforming | none | knn / bedroom: csi-bench run runs/padova_sharp/time_block/paper_beamforming-none-knn-bedroom-w346--d3669d22ae60/config.yaml
+paper_beamforming | none | random_forest / bedroom: csi-bench run runs/padova_sharp/time_block/paper_beamforming-none-random_forest-bedroom-w346--201dba6074f4/config.yaml
+paper_beamforming | none | svm / bedroom: csi-bench run runs/padova_sharp/time_block/paper_beamforming-none-svm-bedroom-w346--7635e4b10856/config.yaml
+
+Feature-selection stability (fraction of selections)
+
+amplitude_stats | mrmr | knn / bedroom (4 selections)
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+  amplitude_stats.flatness  0.75
+amplitude_stats | mrmr | random_forest / bedroom (4 selections)
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+  amplitude_stats.flatness  0.75
+amplitude_stats | mrmr | svm / bedroom (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.mean_power  1.00
+  amplitude_stats.std  1.00
+amplitude_stats+paper_beamforming | mrmr | knn / bedroom (2 selections)
+  amplitude_stats.mean_power  1.00
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  1.00
+amplitude_stats+paper_beamforming | mrmr | random_forest / bedroom (2 selections)
+  amplitude_stats.mean_power  1.00
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  1.00
+amplitude_stats+paper_beamforming | mrmr | svm / bedroom (2 selections)
+  amplitude_stats.mean_power  1.00
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  1.00
+paper_beamforming | mrmr | knn / bedroom (2 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  1.00
+  paper_beamforming.distance_theta_var  0.50
+  paper_beamforming.doppler_theta_var  0.50
+paper_beamforming | mrmr | random_forest / bedroom (2 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  1.00
+  paper_beamforming.distance_theta_var  0.50
+  paper_beamforming.doppler_theta_var  0.50
+paper_beamforming | mrmr | svm / bedroom (2 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.flatness_theta_var  1.00
+  paper_beamforming.distance_theta_var  0.50
+  paper_beamforming.doppler_theta_var  0.50
+
+tor_vergata / random_window
+===========================
+
+Reference runs (not comparable to the table above)
+
+method                                    r1                                                  r2                                                  mixed
+paper_beamforming | mrmr | random_forest  -                                                   -                                                   F1 96.25 [95.00, 97.48] acc 96.33 [95.01, 97.61]
+paper_beamforming | none | random_forest  F1 99.32 [98.85, 99.65] acc 99.34 [98.81, 99.70] *  F1 99.93 [99.85, 100.00] acc 99.93 [99.86, 100.00]  -
+published (accuracy)                      99.41                                               99.59                                               97.37
+* r1 / paper_beamforming | none | random_forest: single test recording for empty
+
+paper_beamforming | mrmr | random_forest / mixed: csi-bench run runs/tor_vergata/random_window/paper_beamforming-mrmr-random_forest-mixed-w56--b9e948729694/config.yaml
+paper_beamforming | none | random_forest / r1: csi-bench run runs/tor_vergata/random_window/paper_beamforming-none-random_forest-r1-w56--27355e6c74a3/config.yaml
+paper_beamforming | none | random_forest / r2: csi-bench run runs/tor_vergata/random_window/paper_beamforming-none-random_forest-r2-w56--96b51db85652/config.yaml
+
+tor_vergata / room_holdout
+==========================
+
+Comparison (test score of the variant with the best tuning-stage val F1)
+
+method                                                    r1→r2                                             r2→r1
+amplitude_stats | mrmr | knn                              F1 43.97 [39.03, 49.95] acc 52.39 [44.50, 60.67]  F1 38.89 [15.75, 58.25] acc 38.32 [17.40, 60.32] *
+amplitude_stats | mrmr | random_forest                    F1 42.05 [38.18, 46.83] acc 51.57 [45.09, 57.81]  F1 39.64 [19.62, 57.86] acc 40.55 [19.76, 62.24] *
+amplitude_stats | mrmr | svm                              F1 47.22 [42.06, 53.56] acc 54.57 [46.78, 62.90]  F1 40.18 [17.62, 59.84] acc 39.76 [18.56, 61.68] *
+amplitude_stats | none | knn                              F1 41.71 [37.43, 47.55] acc 51.79 [45.55, 58.47]  F1 41.46 [18.07, 62.02] acc 42.10 [19.14, 65.90] *
+amplitude_stats | none | random_forest                    F1 39.30 [36.67, 43.02] acc 51.68 [47.23, 56.46]  F1 40.22 [18.18, 58.55] acc 41.15 [20.15, 63.45] *
+amplitude_stats | none | svm                              F1 44.97 [34.21, 58.44] acc 55.13 [44.84, 66.96]  F1 22.53 [6.88, 35.54] acc 25.51 [10.81, 44.24] *
+amplitude_stats+paper_beamforming | mrmr | knn            F1 55.62 [45.09, 67.96] acc 59.96 [49.04, 71.14]  F1 48.86 [35.73, 59.79] acc 58.05 [45.01, 69.77] *
+amplitude_stats+paper_beamforming | mrmr | random_forest  F1 45.47 [41.62, 50.36] acc 56.00 [50.70, 61.90]  F1 48.38 [35.38, 59.18] acc 58.74 [45.64, 70.45] *
+amplitude_stats+paper_beamforming | mrmr | svm            F1 53.90 [48.15, 62.71] acc 59.48 [50.02, 69.96]  F1 37.01 [28.02, 46.45] acc 50.60 [40.01, 60.44] *
+amplitude_stats+paper_beamforming | none | knn            F1 55.16 [46.09, 66.27] acc 59.41 [49.43, 69.92]  F1 37.34 [24.26, 48.43] acc 39.81 [26.75, 52.43] *
+amplitude_stats+paper_beamforming | none | random_forest  F1 52.36 [48.88, 56.25] acc 61.79 [56.47, 67.57]  F1 45.23 [28.15, 57.34] acc 51.28 [33.85, 67.88] *
+amplitude_stats+paper_beamforming | none | svm            F1 49.70 [34.11, 67.02] acc 49.43 [31.99, 69.49]  F1 23.95 [12.09, 33.65] acc 23.41 [10.99, 35.10] *
+lwm | none | knn                                          F1 16.60 [9.69, 23.47] acc 28.54 [21.94, 35.90]   F1 33.97 [19.25, 42.84] acc 44.85 [33.03, 56.64] *
+lwm | none | logreg                                       F1 11.40 [10.54, 12.35] acc 29.21 [26.70, 32.06]  F1 13.99 [9.61, 19.00] acc 17.16 [14.01, 21.37] *
+lwm | none | mlp                                          F1 32.09 [11.58, 50.02] acc 42.19 [27.94, 58.39]  F1 14.96 [7.83, 20.76] acc 18.40 [13.12, 23.54] *
+lwm | none | random_forest                                F1 13.51 [10.54, 16.26] acc 29.35 [26.68, 32.45]  F1 33.62 [22.96, 44.02] acc 44.02 [29.58, 58.65] *
+lwm | none | svm                                          F1 11.70 [10.87, 12.66] acc 29.38 [26.87, 32.11]  F1 7.71 [6.44, 8.95] acc 14.08 [12.95, 15.35] *
+paper_beamforming | mrmr | knn                            F1 38.03 [35.82, 39.43] acc 47.77 [45.50, 50.39]  F1 42.87 [22.33, 58.51] acc 44.31 [24.80, 64.95] *
+paper_beamforming | mrmr | random_forest                  F1 37.66 [36.36, 38.94] acc 48.21 [44.67, 52.42]  F1 44.18 [23.88, 60.78] acc 45.70 [26.65, 66.23] *
+paper_beamforming | mrmr | svm                            F1 36.48 [35.79, 37.22] acc 48.09 [45.14, 51.45]  F1 35.77 [15.73, 50.60] acc 35.46 [17.07, 54.79] *
+paper_beamforming | none | knn                            F1 40.65 [35.12, 45.66] acc 48.48 [41.72, 55.71]  F1 28.70 [20.00, 36.94] acc 30.43 [20.73, 39.09] *
+paper_beamforming | none | random_forest                  F1 37.25 [36.13, 38.34] acc 50.76 [47.78, 54.11]  F1 38.76 [23.05, 52.03] acc 44.70 [28.13, 60.68] *
+paper_beamforming | none | svm                            F1 35.30 [32.17, 38.24] acc 45.76 [39.72, 52.72]  F1 36.87 [25.99, 46.19] acc 36.20 [25.07, 46.85] *
+* r2→r1 / amplitude_stats | mrmr | knn: single test recording for empty
+* r2→r1 / amplitude_stats | mrmr | random_forest: single test recording for empty
+* r2→r1 / amplitude_stats | mrmr | svm: single test recording for empty
+* r2→r1 / amplitude_stats | none | knn: single test recording for empty
+* r2→r1 / amplitude_stats | none | random_forest: single test recording for empty
+* r2→r1 / amplitude_stats | none | svm: single test recording for empty
+* r2→r1 / amplitude_stats+paper_beamforming | mrmr | knn: single test recording for empty
+* r2→r1 / amplitude_stats+paper_beamforming | mrmr | random_forest: single test recording for empty
+* r2→r1 / amplitude_stats+paper_beamforming | mrmr | svm: single test recording for empty
+* r2→r1 / amplitude_stats+paper_beamforming | none | knn: single test recording for empty
+* r2→r1 / amplitude_stats+paper_beamforming | none | random_forest: single test recording for empty
+* r2→r1 / amplitude_stats+paper_beamforming | none | svm: single test recording for empty
+* r2→r1 / lwm | none | knn: single test recording for empty
+* r2→r1 / lwm | none | logreg: single test recording for empty
+* r2→r1 / lwm | none | mlp: single test recording for empty
+* r2→r1 / lwm | none | random_forest: single test recording for empty
+* r2→r1 / lwm | none | svm: single test recording for empty
+* r2→r1 / paper_beamforming | mrmr | knn: single test recording for empty
+* r2→r1 / paper_beamforming | mrmr | random_forest: single test recording for empty
+* r2→r1 / paper_beamforming | mrmr | svm: single test recording for empty
+* r2→r1 / paper_beamforming | none | knn: single test recording for empty
+* r2→r1 / paper_beamforming | none | random_forest: single test recording for empty
+* r2→r1 / paper_beamforming | none | svm: single test recording for empty
+
+amplitude_stats | mrmr | knn / r1→r2: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats-mrmr-knn-r1_to_r2-w40--ee768721085b/config.yaml
+amplitude_stats | mrmr | knn / r2→r1: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats-mrmr-knn-r2_to_r1-w50--762c216151af/config.yaml
+amplitude_stats | mrmr | random_forest / r1→r2: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats-mrmr-random_forest-r1_to_r2-w50--5bccf514a77b/config.yaml
+amplitude_stats | mrmr | random_forest / r2→r1: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats-mrmr-random_forest-r2_to_r1-w50--3426085f10b0/config.yaml
+amplitude_stats | mrmr | svm / r1→r2: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats-mrmr-svm-r1_to_r2-w50--a6024ec6cf2a/config.yaml
+amplitude_stats | mrmr | svm / r2→r1: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats-mrmr-svm-r2_to_r1-w40--ae9555de1ddc/config.yaml
+amplitude_stats | none | knn / r1→r2: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats-none-knn-r1_to_r2-w40--54031c2f7ad4/config.yaml
+amplitude_stats | none | knn / r2→r1: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats-none-knn-r2_to_r1-w50--12652b569db6/config.yaml
+amplitude_stats | none | random_forest / r1→r2: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats-none-random_forest-r1_to_r2-w40--fff48409591a/config.yaml
+amplitude_stats | none | random_forest / r2→r1: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats-none-random_forest-r2_to_r1-w50--84d67838ff9d/config.yaml
+amplitude_stats | none | svm / r1→r2: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats-none-svm-r1_to_r2-w50--3254b8998d36/config.yaml
+amplitude_stats | none | svm / r2→r1: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats-none-svm-r2_to_r1-w50--25481ba5c27d/config.yaml
+amplitude_stats+paper_beamforming | mrmr | knn / r1→r2: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats+paper_beamforming-mrmr-knn-r1_to_r2-w50--42530b8758a3/config.yaml
+amplitude_stats+paper_beamforming | mrmr | knn / r2→r1: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats+paper_beamforming-mrmr-knn-r2_to_r1-w50--baee441b6592/config.yaml
+amplitude_stats+paper_beamforming | mrmr | random_forest / r1→r2: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats+paper_beamforming-mrmr-random_forest-r1_to_r2-w30--9a4ed4438558/config.yaml
+amplitude_stats+paper_beamforming | mrmr | random_forest / r2→r1: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats+paper_beamforming-mrmr-random_forest-r2_to_r1-w50--64fb05fe32e7/config.yaml
+amplitude_stats+paper_beamforming | mrmr | svm / r1→r2: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats+paper_beamforming-mrmr-svm-r1_to_r2-w50--56adbc09ede8/config.yaml
+amplitude_stats+paper_beamforming | mrmr | svm / r2→r1: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats+paper_beamforming-mrmr-svm-r2_to_r1-w50--d2ca8c6d5929/config.yaml
+amplitude_stats+paper_beamforming | none | knn / r1→r2: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats+paper_beamforming-none-knn-r1_to_r2-w20--c223d0d4a2c7/config.yaml
+amplitude_stats+paper_beamforming | none | knn / r2→r1: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats+paper_beamforming-none-knn-r2_to_r1-w50--78863974c48b/config.yaml
+amplitude_stats+paper_beamforming | none | random_forest / r1→r2: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats+paper_beamforming-none-random_forest-r1_to_r2-w40--b03e871b643e/config.yaml
+amplitude_stats+paper_beamforming | none | random_forest / r2→r1: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats+paper_beamforming-none-random_forest-r2_to_r1-w50--6c0814fe32d9/config.yaml
+amplitude_stats+paper_beamforming | none | svm / r1→r2: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats+paper_beamforming-none-svm-r1_to_r2-w20--284bbce4cd15/config.yaml
+amplitude_stats+paper_beamforming | none | svm / r2→r1: csi-bench run runs/tor_vergata/room_holdout/amplitude_stats+paper_beamforming-none-svm-r2_to_r1-w50--b2192ec341ee/config.yaml
+lwm | none | knn / r1→r2: csi-bench run runs/tor_vergata/room_holdout/lwm-none-knn-r1_to_r2-w50--da3459617b59/config.yaml
+lwm | none | knn / r2→r1: csi-bench run runs/tor_vergata/room_holdout/lwm-none-knn-r2_to_r1-w30--64e1cc1b99a4/config.yaml
+lwm | none | logreg / r1→r2: csi-bench run runs/tor_vergata/room_holdout/lwm-none-logreg-r1_to_r2-w50--b0f8cc0b7b83/config.yaml
+lwm | none | logreg / r2→r1: csi-bench run runs/tor_vergata/room_holdout/lwm-none-logreg-r2_to_r1-w30--b9fd404445f9/config.yaml
+lwm | none | mlp / r1→r2: csi-bench run runs/tor_vergata/room_holdout/lwm-none-mlp-r1_to_r2-w50--58e6142736b2/config.yaml
+lwm | none | mlp / r2→r1: csi-bench run runs/tor_vergata/room_holdout/lwm-none-mlp-r2_to_r1-w30--4896805a60ef/config.yaml
+lwm | none | random_forest / r1→r2: csi-bench run runs/tor_vergata/room_holdout/lwm-none-random_forest-r1_to_r2-w40--3a10222fab81/config.yaml
+lwm | none | random_forest / r2→r1: csi-bench run runs/tor_vergata/room_holdout/lwm-none-random_forest-r2_to_r1-w40--5f2eb44aac2c/config.yaml
+lwm | none | svm / r1→r2: csi-bench run runs/tor_vergata/room_holdout/lwm-none-svm-r1_to_r2-w40--ab0b9aaedf2e/config.yaml
+lwm | none | svm / r2→r1: csi-bench run runs/tor_vergata/room_holdout/lwm-none-svm-r2_to_r1-w30--4607c6ffd2cb/config.yaml
+paper_beamforming | mrmr | knn / r1→r2: csi-bench run runs/tor_vergata/room_holdout/paper_beamforming-mrmr-knn-r1_to_r2-w30--4649cc1c732c/config.yaml
+paper_beamforming | mrmr | knn / r2→r1: csi-bench run runs/tor_vergata/room_holdout/paper_beamforming-mrmr-knn-r2_to_r1-w50--a68f37f87f18/config.yaml
+paper_beamforming | mrmr | random_forest / r1→r2: csi-bench run runs/tor_vergata/room_holdout/paper_beamforming-mrmr-random_forest-r1_to_r2-w50--567eae733958/config.yaml
+paper_beamforming | mrmr | random_forest / r2→r1: csi-bench run runs/tor_vergata/room_holdout/paper_beamforming-mrmr-random_forest-r2_to_r1-w50--6c64337f5c7c/config.yaml
+paper_beamforming | mrmr | svm / r1→r2: csi-bench run runs/tor_vergata/room_holdout/paper_beamforming-mrmr-svm-r1_to_r2-w50--78b944767224/config.yaml
+paper_beamforming | mrmr | svm / r2→r1: csi-bench run runs/tor_vergata/room_holdout/paper_beamforming-mrmr-svm-r2_to_r1-w50--a8a3af3286a7/config.yaml
+paper_beamforming | none | knn / r1→r2: csi-bench run runs/tor_vergata/room_holdout/paper_beamforming-none-knn-r1_to_r2-w50--8766aa500580/config.yaml
+paper_beamforming | none | knn / r2→r1: csi-bench run runs/tor_vergata/room_holdout/paper_beamforming-none-knn-r2_to_r1-w50--ea30f7d05bbb/config.yaml
+paper_beamforming | none | random_forest / r1→r2: csi-bench run runs/tor_vergata/room_holdout/paper_beamforming-none-random_forest-r1_to_r2-w56--cf32f9ed509a/config.yaml
+paper_beamforming | none | random_forest / r2→r1: csi-bench run runs/tor_vergata/room_holdout/paper_beamforming-none-random_forest-r2_to_r1-w56--2e07ff5daedc/config.yaml
+paper_beamforming | none | svm / r1→r2: csi-bench run runs/tor_vergata/room_holdout/paper_beamforming-none-svm-r1_to_r2-w50--f48f4dded31b/config.yaml
+paper_beamforming | none | svm / r2→r1: csi-bench run runs/tor_vergata/room_holdout/paper_beamforming-none-svm-r2_to_r1-w50--558955c11e43/config.yaml
+
+Feature-selection stability (fraction of selections)
+
+amplitude_stats | mrmr | knn / r1→r2 (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | knn / r2→r1 (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | random_forest / r1→r2 (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | random_forest / r2→r1 (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | svm / r1→r2 (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | svm / r2→r1 (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats+paper_beamforming | mrmr | knn / r1→r2 (4 selections)
+  amplitude_stats.std  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  amplitude_stats.flatness  0.75
+  paper_beamforming.doppler_theta_var  0.25
+amplitude_stats+paper_beamforming | mrmr | knn / r2→r1 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  amplitude_stats.std  0.75
+  paper_beamforming.distance_theta_var  0.25
+amplitude_stats+paper_beamforming | mrmr | random_forest / r1→r2 (4 selections)
+  amplitude_stats.std  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  amplitude_stats.flatness  0.75
+  paper_beamforming.doppler_theta_var  0.25
+amplitude_stats+paper_beamforming | mrmr | random_forest / r2→r1 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  amplitude_stats.std  0.75
+  paper_beamforming.distance_theta_var  0.25
+amplitude_stats+paper_beamforming | mrmr | svm / r1→r2 (4 selections)
+  amplitude_stats.std  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  amplitude_stats.flatness  0.75
+  paper_beamforming.doppler_theta_var  0.25
+amplitude_stats+paper_beamforming | mrmr | svm / r2→r1 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  amplitude_stats.std  0.75
+  paper_beamforming.distance_theta_var  0.25
+paper_beamforming | mrmr | knn / r1→r2 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.distance_theta_var  0.50
+  paper_beamforming.flatness_theta_var  0.50
+paper_beamforming | mrmr | knn / r2→r1 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+paper_beamforming | mrmr | random_forest / r1→r2 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.distance_theta_var  0.50
+  paper_beamforming.flatness_theta_var  0.50
+paper_beamforming | mrmr | random_forest / r2→r1 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+paper_beamforming | mrmr | svm / r1→r2 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.distance_theta_var  0.50
+  paper_beamforming.flatness_theta_var  0.50
+paper_beamforming | mrmr | svm / r2→r1 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.distance_theta_var  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+
+tor_vergata / time_block
+========================
+
+Comparison (test score of the variant with the best tuning-stage val F1)
+
+method                                                    r1                                                    r2                                                  mixed
+amplitude_stats | mrmr | knn                              F1 81.91 [67.10, 93.04] acc 81.86 [68.92, 94.18] *    F1 85.29 [76.34, 93.52] acc 86.10 [78.28, 93.85]    F1 76.91 [61.43, 86.74] acc 78.61 [68.39, 87.87]
+amplitude_stats | mrmr | random_forest                    F1 85.05 [67.72, 96.51] acc 84.82 [71.91, 96.99] *    F1 87.66 [82.07, 93.13] acc 88.35 [83.16, 93.48]    F1 79.08 [62.37, 89.11] acc 80.46 [69.44, 90.17]
+amplitude_stats | mrmr | svm                              F1 86.03 [68.94, 97.01] acc 85.90 [72.90, 97.20] *    F1 87.70 [83.08, 92.28] acc 88.95 [84.52, 93.11]    F1 79.79 [62.35, 90.60] acc 81.19 [70.06, 91.61]
+amplitude_stats | none | knn                              F1 86.46 [71.98, 96.25] acc 85.71 [73.95, 96.69] *    F1 97.35 [96.40, 98.55] acc 97.51 [96.58, 98.59]    F1 87.90 [78.76, 94.68] acc 88.08 [79.03, 95.27]
+amplitude_stats | none | random_forest                    F1 85.48 [68.43, 96.08] acc 85.23 [72.66, 96.52] *    F1 96.35 [94.50, 98.54] acc 96.55 [94.81, 98.59]    F1 86.76 [78.29, 93.30] acc 87.23 [78.42, 94.32]
+amplitude_stats | none | svm                              F1 86.72 [66.74, 98.01] acc 86.29 [72.77, 97.92] *    F1 99.53 [99.20, 99.85] acc 99.57 [99.22, 99.86]    F1 88.25 [77.65, 95.85] acc 88.32 [78.53, 96.05]
+amplitude_stats+paper_beamforming | mrmr | knn            F1 95.05 [88.28, 99.24] acc 94.55 [87.09, 99.11] *    F1 90.42 [87.07, 94.71] acc 90.56 [86.94, 94.99]    F1 95.14 [90.66, 98.25] acc 94.96 [90.07, 98.32]
+amplitude_stats+paper_beamforming | mrmr | random_forest  F1 94.98 [87.90, 99.29] acc 94.36 [86.22, 99.23] *    F1 90.60 [87.10, 95.57] acc 90.79 [86.67, 95.87]    F1 94.48 [90.06, 97.56] acc 94.37 [89.41, 97.69]
+amplitude_stats+paper_beamforming | mrmr | svm            F1 94.79 [89.21, 98.89] acc 94.21 [87.78, 98.81] *    F1 91.72 [87.86, 96.99] acc 91.85 [87.40, 97.17]    F1 95.30 [90.80, 98.68] acc 95.08 [90.16, 98.64]
+amplitude_stats+paper_beamforming | none | knn            F1 95.98 [93.60, 98.72] acc 95.80 [92.99, 98.79] *    F1 97.37 [95.43, 99.36] acc 97.56 [95.74, 99.41]    F1 96.91 [94.83, 99.04] acc 96.86 [94.72, 99.01]
+amplitude_stats+paper_beamforming | none | random_forest  F1 98.57 [96.85, 99.85] acc 98.74 [97.31, 99.81] *    F1 98.91 [98.33, 99.46] acc 98.98 [98.38, 99.51]    F1 98.35 [97.00, 99.40] acc 98.49 [97.46, 99.40]
+amplitude_stats+paper_beamforming | none | svm            F1 97.09 [94.71, 99.25] acc 96.96 [94.25, 99.26] *    F1 99.23 [98.42, 100.00] acc 99.29 [98.55, 100.00]  F1 97.61 [95.78, 99.08] acc 97.65 [95.97, 99.09]
+lwm | none | knn                                          F1 99.30 [98.66, 100.00] acc 99.12 [98.28, 100.00] *  F1 97.60 [95.60, 100.00] acc 97.72 [95.70, 100.00]  F1 99.20 [98.50, 99.92] acc 99.06 [98.19, 99.92]
+lwm | none | logreg                                       F1 96.80 [93.60, 99.81] acc 96.19 [92.41, 99.76] *    F1 99.77 [99.53, 100.00] acc 99.79 [99.54, 100.00]  F1 99.04 [97.87, 99.99] acc 98.96 [97.55, 99.99]
+lwm | none | mlp                                          F1 98.16 [96.10, 100.00] acc 97.66 [95.13, 100.00] *  F1 99.09 [98.24, 100.00] acc 99.15 [98.39, 100.00]  F1 99.77 [99.45, 100.00] acc 99.74 [99.38, 100.00]
+lwm | none | random_forest                                F1 99.38 [98.81, 100.00] acc 99.22 [98.47, 100.00] *  F1 98.42 [97.08, 100.00] acc 98.50 [97.17, 100.00]  F1 98.80 [97.46, 99.81] acc 98.89 [97.86, 99.79]
+lwm | none | svm                                          F1 99.83 [99.63, 100.00] acc 99.78 [99.55, 100.00] *  F1 99.97 [99.95, 100.00] acc 99.98 [99.95, 100.00]  F1 99.77 [99.38, 100.00] acc 99.74 [99.27, 100.00]
+paper_beamforming | mrmr | knn                            F1 73.59 [62.37, 82.83] acc 76.69 [67.25, 85.60] *    F1 83.75 [80.91, 87.34] acc 84.11 [80.46, 88.39]    F1 72.72 [63.63, 81.71] acc 73.95 [65.04, 83.14]
+paper_beamforming | mrmr | random_forest                  F1 81.33 [63.31, 90.83] acc 83.69 [72.59, 92.28] *    F1 87.73 [85.04, 90.99] acc 87.98 [84.62, 91.79]    F1 74.25 [66.60, 82.00] acc 74.35 [66.04, 82.55]
+paper_beamforming | mrmr | svm                            F1 77.84 [60.71, 87.54] acc 80.53 [69.11, 89.79] *    F1 85.59 [83.14, 88.24] acc 86.06 [83.03, 89.48]    F1 77.52 [67.37, 85.68] acc 79.00 [70.96, 86.49]
+paper_beamforming | none | knn                            F1 85.13 [82.51, 88.06] acc 86.20 [83.76, 88.31] *    F1 89.07 [83.40, 95.59] acc 89.41 [83.89, 95.95]    F1 85.67 [81.64, 90.58] acc 86.10 [81.96, 91.22]
+paper_beamforming | none | random_forest                  F1 95.08 [92.98, 97.02] acc 95.98 [94.09, 97.65] *    F1 95.90 [94.18, 97.93] acc 95.89 [94.07, 97.94]    F1 91.40 [88.49, 94.28] acc 91.97 [89.22, 95.04]
+paper_beamforming | none | svm                            F1 82.06 [72.87, 89.44] acc 83.20 [73.41, 91.25] *    F1 94.21 [91.63, 97.85] acc 94.43 [91.58, 97.97]    F1 86.59 [81.06, 92.06] acc 86.92 [80.99, 92.67]
+* r1 / amplitude_stats | mrmr | knn: single test recording for empty
+* r1 / amplitude_stats | mrmr | random_forest: single test recording for empty
+* r1 / amplitude_stats | mrmr | svm: single test recording for empty
+* r1 / amplitude_stats | none | knn: single test recording for empty
+* r1 / amplitude_stats | none | random_forest: single test recording for empty
+* r1 / amplitude_stats | none | svm: single test recording for empty
+* r1 / amplitude_stats+paper_beamforming | mrmr | knn: single test recording for empty
+* r1 / amplitude_stats+paper_beamforming | mrmr | random_forest: single test recording for empty
+* r1 / amplitude_stats+paper_beamforming | mrmr | svm: single test recording for empty
+* r1 / amplitude_stats+paper_beamforming | none | knn: single test recording for empty
+* r1 / amplitude_stats+paper_beamforming | none | random_forest: single test recording for empty
+* r1 / amplitude_stats+paper_beamforming | none | svm: single test recording for empty
+* r1 / lwm | none | knn: single test recording for empty
+* r1 / lwm | none | logreg: single test recording for empty
+* r1 / lwm | none | mlp: single test recording for empty
+* r1 / lwm | none | random_forest: single test recording for empty
+* r1 / lwm | none | svm: single test recording for empty
+* r1 / paper_beamforming | mrmr | knn: single test recording for empty
+* r1 / paper_beamforming | mrmr | random_forest: single test recording for empty
+* r1 / paper_beamforming | mrmr | svm: single test recording for empty
+* r1 / paper_beamforming | none | knn: single test recording for empty
+* r1 / paper_beamforming | none | random_forest: single test recording for empty
+* r1 / paper_beamforming | none | svm: single test recording for empty
+
+amplitude_stats | mrmr | knn / mixed: csi-bench run runs/tor_vergata/time_block/amplitude_stats-mrmr-knn-mixed-w50--f3332986ca9e/config.yaml
+amplitude_stats | mrmr | knn / r1: csi-bench run runs/tor_vergata/time_block/amplitude_stats-mrmr-knn-r1-w40--357520640958/config.yaml
+amplitude_stats | mrmr | knn / r2: csi-bench run runs/tor_vergata/time_block/amplitude_stats-mrmr-knn-r2-w50--a7d809f1f6e9/config.yaml
+amplitude_stats | mrmr | random_forest / mixed: csi-bench run runs/tor_vergata/time_block/amplitude_stats-mrmr-random_forest-mixed-w50--e10340fd16c4/config.yaml
+amplitude_stats | mrmr | random_forest / r1: csi-bench run runs/tor_vergata/time_block/amplitude_stats-mrmr-random_forest-r1-w50--e464a268c6fe/config.yaml
+amplitude_stats | mrmr | random_forest / r2: csi-bench run runs/tor_vergata/time_block/amplitude_stats-mrmr-random_forest-r2-w50--dab6a7f2748c/config.yaml
+amplitude_stats | mrmr | svm / mixed: csi-bench run runs/tor_vergata/time_block/amplitude_stats-mrmr-svm-mixed-w50--88e9b6064a13/config.yaml
+amplitude_stats | mrmr | svm / r1: csi-bench run runs/tor_vergata/time_block/amplitude_stats-mrmr-svm-r1-w50--62f82dc36dc8/config.yaml
+amplitude_stats | mrmr | svm / r2: csi-bench run runs/tor_vergata/time_block/amplitude_stats-mrmr-svm-r2-w30--162482fca796/config.yaml
+amplitude_stats | none | knn / mixed: csi-bench run runs/tor_vergata/time_block/amplitude_stats-none-knn-mixed-w50--83e73e07f7e4/config.yaml
+amplitude_stats | none | knn / r1: csi-bench run runs/tor_vergata/time_block/amplitude_stats-none-knn-r1-w50--911c00911575/config.yaml
+amplitude_stats | none | knn / r2: csi-bench run runs/tor_vergata/time_block/amplitude_stats-none-knn-r2-w50--e0c9b33dff09/config.yaml
+amplitude_stats | none | random_forest / mixed: csi-bench run runs/tor_vergata/time_block/amplitude_stats-none-random_forest-mixed-w50--1358a9a9fd40/config.yaml
+amplitude_stats | none | random_forest / r1: csi-bench run runs/tor_vergata/time_block/amplitude_stats-none-random_forest-r1-w40--a1ac81d5a7c7/config.yaml
+amplitude_stats | none | random_forest / r2: csi-bench run runs/tor_vergata/time_block/amplitude_stats-none-random_forest-r2-w50--ae3268dc9fb5/config.yaml
+amplitude_stats | none | svm / mixed: csi-bench run runs/tor_vergata/time_block/amplitude_stats-none-svm-mixed-w50--f90bcc6f53fc/config.yaml
+amplitude_stats | none | svm / r1: csi-bench run runs/tor_vergata/time_block/amplitude_stats-none-svm-r1-w50--1d32fdaa530d/config.yaml
+amplitude_stats | none | svm / r2: csi-bench run runs/tor_vergata/time_block/amplitude_stats-none-svm-r2-w40--20cb785141aa/config.yaml
+amplitude_stats+paper_beamforming | mrmr | knn / mixed: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-mrmr-knn-mixed-w50--342aa3fd2b66/config.yaml
+amplitude_stats+paper_beamforming | mrmr | knn / r1: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-mrmr-knn-r1-w50--c8e5d16b2b01/config.yaml
+amplitude_stats+paper_beamforming | mrmr | knn / r2: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-mrmr-knn-r2-w50--5998ed7f8583/config.yaml
+amplitude_stats+paper_beamforming | mrmr | random_forest / mixed: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-mrmr-random_forest-mixed-w50--6460bbf88412/config.yaml
+amplitude_stats+paper_beamforming | mrmr | random_forest / r1: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-mrmr-random_forest-r1-w50--7aa11e8f4d2f/config.yaml
+amplitude_stats+paper_beamforming | mrmr | random_forest / r2: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-mrmr-random_forest-r2-w50--2b07d09b38c8/config.yaml
+amplitude_stats+paper_beamforming | mrmr | svm / mixed: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-mrmr-svm-mixed-w50--cd50a81be259/config.yaml
+amplitude_stats+paper_beamforming | mrmr | svm / r1: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-mrmr-svm-r1-w50--dabeb4202b25/config.yaml
+amplitude_stats+paper_beamforming | mrmr | svm / r2: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-mrmr-svm-r2-w50--8c088ff00f68/config.yaml
+amplitude_stats+paper_beamforming | none | knn / mixed: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-none-knn-mixed-w50--ff877038e0e7/config.yaml
+amplitude_stats+paper_beamforming | none | knn / r1: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-none-knn-r1-w50--80a72a3773f5/config.yaml
+amplitude_stats+paper_beamforming | none | knn / r2: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-none-knn-r2-w50--f823a552ffee/config.yaml
+amplitude_stats+paper_beamforming | none | random_forest / mixed: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-none-random_forest-mixed-w50--0dae50a6f52b/config.yaml
+amplitude_stats+paper_beamforming | none | random_forest / r1: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-none-random_forest-r1-w50--1ba16c4a67d8/config.yaml
+amplitude_stats+paper_beamforming | none | random_forest / r2: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-none-random_forest-r2-w30--48a547e25c71/config.yaml
+amplitude_stats+paper_beamforming | none | svm / mixed: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-none-svm-mixed-w50--39ed44dc86e3/config.yaml
+amplitude_stats+paper_beamforming | none | svm / r1: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-none-svm-r1-w40--4cebf6495396/config.yaml
+amplitude_stats+paper_beamforming | none | svm / r2: csi-bench run runs/tor_vergata/time_block/amplitude_stats+paper_beamforming-none-svm-r2-w50--9d90c9fc245c/config.yaml
+lwm | none | knn / mixed: csi-bench run runs/tor_vergata/time_block/lwm-none-knn-mixed-w40--6b2cdcdc3d2a/config.yaml
+lwm | none | knn / r1: csi-bench run runs/tor_vergata/time_block/lwm-none-knn-r1-w40--44f3a8b79716/config.yaml
+lwm | none | knn / r2: csi-bench run runs/tor_vergata/time_block/lwm-none-knn-r2-w30--343fe763c531/config.yaml
+lwm | none | logreg / mixed: csi-bench run runs/tor_vergata/time_block/lwm-none-logreg-mixed-w30--46ca1e23ce58/config.yaml
+lwm | none | logreg / r1: csi-bench run runs/tor_vergata/time_block/lwm-none-logreg-r1-w40--334725c9c240/config.yaml
+lwm | none | logreg / r2: csi-bench run runs/tor_vergata/time_block/lwm-none-logreg-r2-w30--151b507d39b0/config.yaml
+lwm | none | mlp / mixed: csi-bench run runs/tor_vergata/time_block/lwm-none-mlp-mixed-w50--1472c312ae26/config.yaml
+lwm | none | mlp / r1: csi-bench run runs/tor_vergata/time_block/lwm-none-mlp-r1-w50--9c609b5f249e/config.yaml
+lwm | none | mlp / r2: csi-bench run runs/tor_vergata/time_block/lwm-none-mlp-r2-w30--0fba30aca06a/config.yaml
+lwm | none | random_forest / mixed: csi-bench run runs/tor_vergata/time_block/lwm-none-random_forest-mixed-w50--74bb937cb0e7/config.yaml
+lwm | none | random_forest / r1: csi-bench run runs/tor_vergata/time_block/lwm-none-random_forest-r1-w50--0b25d333045c/config.yaml
+lwm | none | random_forest / r2: csi-bench run runs/tor_vergata/time_block/lwm-none-random_forest-r2-w40--1a5a668803ee/config.yaml
+lwm | none | svm / mixed: csi-bench run runs/tor_vergata/time_block/lwm-none-svm-mixed-w40--15d20af0773f/config.yaml
+lwm | none | svm / r1: csi-bench run runs/tor_vergata/time_block/lwm-none-svm-r1-w30--5867c4615077/config.yaml
+lwm | none | svm / r2: csi-bench run runs/tor_vergata/time_block/lwm-none-svm-r2-w30--07ad8b2518cc/config.yaml
+paper_beamforming | mrmr | knn / mixed: csi-bench run runs/tor_vergata/time_block/paper_beamforming-mrmr-knn-mixed-w50--4168e8814122/config.yaml
+paper_beamforming | mrmr | knn / r1: csi-bench run runs/tor_vergata/time_block/paper_beamforming-mrmr-knn-r1-w20--8bcccf384e2d/config.yaml
+paper_beamforming | mrmr | knn / r2: csi-bench run runs/tor_vergata/time_block/paper_beamforming-mrmr-knn-r2-w50--4da7ceb062a9/config.yaml
+paper_beamforming | mrmr | random_forest / mixed: csi-bench run runs/tor_vergata/time_block/paper_beamforming-mrmr-random_forest-mixed-w56--f693461b3f9f/config.yaml
+paper_beamforming | mrmr | random_forest / r1: csi-bench run runs/tor_vergata/time_block/paper_beamforming-mrmr-random_forest-r1-w50--b8b4cfcf5a94/config.yaml
+paper_beamforming | mrmr | random_forest / r2: csi-bench run runs/tor_vergata/time_block/paper_beamforming-mrmr-random_forest-r2-w50--889b5662cc74/config.yaml
+paper_beamforming | mrmr | svm / mixed: csi-bench run runs/tor_vergata/time_block/paper_beamforming-mrmr-svm-mixed-w50--cefc57d84c71/config.yaml
+paper_beamforming | mrmr | svm / r1: csi-bench run runs/tor_vergata/time_block/paper_beamforming-mrmr-svm-r1-w40--d32bfa2ba63d/config.yaml
+paper_beamforming | mrmr | svm / r2: csi-bench run runs/tor_vergata/time_block/paper_beamforming-mrmr-svm-r2-w50--7e51169bc300/config.yaml
+paper_beamforming | none | knn / mixed: csi-bench run runs/tor_vergata/time_block/paper_beamforming-none-knn-mixed-w50--f8a91ae1d712/config.yaml
+paper_beamforming | none | knn / r1: csi-bench run runs/tor_vergata/time_block/paper_beamforming-none-knn-r1-w50--ab9d557791f6/config.yaml
+paper_beamforming | none | knn / r2: csi-bench run runs/tor_vergata/time_block/paper_beamforming-none-knn-r2-w50--7f2569c720d2/config.yaml
+paper_beamforming | none | random_forest / mixed: csi-bench run runs/tor_vergata/time_block/paper_beamforming-none-random_forest-mixed-w50--44a34209780c/config.yaml
+paper_beamforming | none | random_forest / r1: csi-bench run runs/tor_vergata/time_block/paper_beamforming-none-random_forest-r1-w50--616b1bfcbcfe/config.yaml
+paper_beamforming | none | random_forest / r2: csi-bench run runs/tor_vergata/time_block/paper_beamforming-none-random_forest-r2-w50--f3b01a30976e/config.yaml
+paper_beamforming | none | svm / mixed: csi-bench run runs/tor_vergata/time_block/paper_beamforming-none-svm-mixed-w50--3b3b16e33add/config.yaml
+paper_beamforming | none | svm / r1: csi-bench run runs/tor_vergata/time_block/paper_beamforming-none-svm-r1-w40--8253809b8df3/config.yaml
+paper_beamforming | none | svm / r2: csi-bench run runs/tor_vergata/time_block/paper_beamforming-none-svm-r2-w50--109b85696ad9/config.yaml
+
+Feature-selection stability (fraction of selections)
+
+amplitude_stats | mrmr | knn / mixed (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | knn / r1 (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | knn / r2 (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | random_forest / mixed (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | random_forest / r1 (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | random_forest / r2 (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | svm / mixed (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | svm / r1 (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats | mrmr | svm / r2 (4 selections)
+  amplitude_stats.flatness  1.00
+  amplitude_stats.std  1.00
+amplitude_stats+paper_beamforming | mrmr | knn / mixed (4 selections)
+  amplitude_stats.std  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  amplitude_stats.flatness  0.75
+  paper_beamforming.distance_mean  0.25
+amplitude_stats+paper_beamforming | mrmr | knn / r1 (4 selections)
+  amplitude_stats.std  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  amplitude_stats.flatness  0.75
+  paper_beamforming.distance_mean  0.25
+amplitude_stats+paper_beamforming | mrmr | knn / r2 (4 selections)
+  amplitude_stats.std  1.00
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  0.75
+  paper_beamforming.distance_theta_var  0.25
+amplitude_stats+paper_beamforming | mrmr | random_forest / mixed (4 selections)
+  amplitude_stats.std  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  amplitude_stats.flatness  0.75
+  paper_beamforming.distance_mean  0.25
+amplitude_stats+paper_beamforming | mrmr | random_forest / r1 (4 selections)
+  paper_beamforming.doppler_integral_mean  1.00
+  amplitude_stats.flatness  0.75
+  amplitude_stats.std  0.75
+  paper_beamforming.distance_mean  0.25
+amplitude_stats+paper_beamforming | mrmr | random_forest / r2 (4 selections)
+  amplitude_stats.std  1.00
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  0.75
+  paper_beamforming.distance_theta_var  0.25
+amplitude_stats+paper_beamforming | mrmr | svm / mixed (4 selections)
+  amplitude_stats.std  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  amplitude_stats.flatness  0.75
+  paper_beamforming.distance_mean  0.25
+amplitude_stats+paper_beamforming | mrmr | svm / r1 (4 selections)
+  amplitude_stats.std  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  amplitude_stats.flatness  0.75
+  paper_beamforming.distance_mean  0.25
+amplitude_stats+paper_beamforming | mrmr | svm / r2 (4 selections)
+  amplitude_stats.std  1.00
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  0.75
+  paper_beamforming.distance_theta_var  0.25
+paper_beamforming | mrmr | knn / mixed (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.doppler_theta_var  0.25
+paper_beamforming | mrmr | knn / r1 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.flatness_theta_var  0.25
+paper_beamforming | mrmr | knn / r2 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.doppler_theta_var  0.25
+paper_beamforming | mrmr | random_forest / mixed (5 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.distance_theta_var  0.80
+  paper_beamforming.doppler_theta_var  0.20
+  paper_beamforming.flatness_mean  0.20
+paper_beamforming | mrmr | random_forest / r1 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.flatness_theta_var  0.25
+paper_beamforming | mrmr | random_forest / r2 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.doppler_theta_var  0.25
+paper_beamforming | mrmr | svm / mixed (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.doppler_theta_var  0.25
+paper_beamforming | mrmr | svm / r1 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.flatness_theta_var  0.25
+paper_beamforming | mrmr | svm / r2 (4 selections)
+  paper_beamforming.distance_mean  1.00
+  paper_beamforming.doppler_integral_mean  1.00
+  paper_beamforming.distance_theta_var  0.75
+  paper_beamforming.doppler_theta_var  0.25
+
+Leakage, tor_vergata (test accuracy %, random minus time-block)
+
+method                                                    room   random split  time-block split  difference  published
+amplitude_stats | mrmr | knn                              r1     -             81.86             -           -
+amplitude_stats | mrmr | knn                              r2     -             86.10             -           -
+amplitude_stats | mrmr | knn                              mixed  -             78.61             -           -
+amplitude_stats | mrmr | random_forest                    r1     -             84.82             -           -
+amplitude_stats | mrmr | random_forest                    r2     -             88.35             -           -
+amplitude_stats | mrmr | random_forest                    mixed  -             80.46             -           -
+amplitude_stats | mrmr | svm                              r1     -             85.90             -           -
+amplitude_stats | mrmr | svm                              r2     -             88.95             -           -
+amplitude_stats | mrmr | svm                              mixed  -             81.19             -           -
+amplitude_stats | none | knn                              r1     -             85.71             -           -
+amplitude_stats | none | knn                              r2     -             97.51             -           -
+amplitude_stats | none | knn                              mixed  -             88.08             -           -
+amplitude_stats | none | random_forest                    r1     -             85.23             -           -
+amplitude_stats | none | random_forest                    r2     -             96.55             -           -
+amplitude_stats | none | random_forest                    mixed  -             87.23             -           -
+amplitude_stats | none | svm                              r1     -             86.29             -           -
+amplitude_stats | none | svm                              r2     -             99.57             -           -
+amplitude_stats | none | svm                              mixed  -             88.32             -           -
+amplitude_stats+paper_beamforming | mrmr | knn            r1     -             94.55             -           -
+amplitude_stats+paper_beamforming | mrmr | knn            r2     -             90.56             -           -
+amplitude_stats+paper_beamforming | mrmr | knn            mixed  -             94.96             -           -
+amplitude_stats+paper_beamforming | mrmr | random_forest  r1     -             94.36             -           -
+amplitude_stats+paper_beamforming | mrmr | random_forest  r2     -             90.79             -           -
+amplitude_stats+paper_beamforming | mrmr | random_forest  mixed  -             94.37             -           -
+amplitude_stats+paper_beamforming | mrmr | svm            r1     -             94.21             -           -
+amplitude_stats+paper_beamforming | mrmr | svm            r2     -             91.85             -           -
+amplitude_stats+paper_beamforming | mrmr | svm            mixed  -             95.08             -           -
+amplitude_stats+paper_beamforming | none | knn            r1     -             95.80             -           -
+amplitude_stats+paper_beamforming | none | knn            r2     -             97.56             -           -
+amplitude_stats+paper_beamforming | none | knn            mixed  -             96.86             -           -
+amplitude_stats+paper_beamforming | none | random_forest  r1     -             98.74             -           -
+amplitude_stats+paper_beamforming | none | random_forest  r2     -             98.98             -           -
+amplitude_stats+paper_beamforming | none | random_forest  mixed  -             98.49             -           -
+amplitude_stats+paper_beamforming | none | svm            r1     -             96.96             -           -
+amplitude_stats+paper_beamforming | none | svm            r2     -             99.29             -           -
+amplitude_stats+paper_beamforming | none | svm            mixed  -             97.65             -           -
+lwm | none | knn                                          r1     -             99.12             -           -
+lwm | none | knn                                          r2     -             97.72             -           -
+lwm | none | knn                                          mixed  -             99.06             -           -
+lwm | none | logreg                                       r1     -             96.19             -           -
+lwm | none | logreg                                       r2     -             99.79             -           -
+lwm | none | logreg                                       mixed  -             98.96             -           -
+lwm | none | mlp                                          r1     -             97.66             -           -
+lwm | none | mlp                                          r2     -             99.15             -           -
+lwm | none | mlp                                          mixed  -             99.74             -           -
+lwm | none | random_forest                                r1     -             99.22             -           -
+lwm | none | random_forest                                r2     -             98.50             -           -
+lwm | none | random_forest                                mixed  -             98.89             -           -
+lwm | none | svm                                          r1     -             99.78             -           -
+lwm | none | svm                                          r2     -             99.98             -           -
+lwm | none | svm                                          mixed  -             99.74             -           -
+paper_beamforming | mrmr | knn                            r1     -             76.69             -           -
+paper_beamforming | mrmr | knn                            r2     -             84.11             -           -
+paper_beamforming | mrmr | knn                            mixed  -             73.95             -           -
+paper_beamforming | mrmr | random_forest                  r1     -             83.69             -           -
+paper_beamforming | mrmr | random_forest                  r2     -             87.98             -           -
+paper_beamforming | mrmr | random_forest                  mixed  96.33         74.35             +21.98      97.37
+paper_beamforming | mrmr | svm                            r1     -             80.53             -           -
+paper_beamforming | mrmr | svm                            r2     -             86.06             -           -
+paper_beamforming | mrmr | svm                            mixed  -             79.00             -           -
+paper_beamforming | none | knn                            r1     -             86.20             -           -
+paper_beamforming | none | knn                            r2     -             89.41             -           -
+paper_beamforming | none | knn                            mixed  -             86.10             -           -
+paper_beamforming | none | random_forest                  r1     99.34         95.98             +3.36       99.41
+paper_beamforming | none | random_forest                  r2     99.93         95.89             +4.05       99.59
+paper_beamforming | none | random_forest                  mixed  -             91.97             -           -
+paper_beamforming | none | svm                            r1     -             83.20             -           -
+paper_beamforming | none | svm                            r2     -             94.43             -           -
+paper_beamforming | none | svm                            mixed  -             86.92             -           -
