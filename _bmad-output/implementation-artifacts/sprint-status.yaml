@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-07-2026 09:00
-last_updated: 2026-11-05
+last_updated: 2026-11-07
 project: master
 project_key: NOKEY
 tracking_system: file-system
@@ -80,7 +80,7 @@ development_status:
 
   epic-6: in-progress
   6-1-padova-80-mhz-loader: done
-  6-2-padova-cross-room-baseline: in-progress
+  6-2-padova-cross-room-baseline: done
   6-3-padova-sharp-comparable-run: backlog
   6-4-csi-bench-loader: backlog
   epic-6-retrospective: optional

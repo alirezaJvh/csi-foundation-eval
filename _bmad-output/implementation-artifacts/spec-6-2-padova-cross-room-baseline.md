@@ -2,7 +2,7 @@
 title: 'Padova cross-room baseline'
 type: 'feature'
 created: '2026-11-05'
-status: 'in-progress'
+status: 'done'
 baseline_commit: 'f362cd6680c1d1f1e1b75a459cc54790138e6b8e'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -64,8 +64,8 @@ context:
 - [x] `experiments/padova_cross_room.yaml` -- new sweep with the paired `@direction` axis; the header gives the run count, the plan hashes and the stride rule.
 - [x] `tests/test_sweep.py` -- add a Padova cross-room expansion test: 144 unique ids, 72 per plan, grid equal to the Padova baseline apart from rooms and split.
 - [x] `tests/test_padova.py` -- add a skip-if-absent pin of both plans to the loader output, with no test-room packets in train or val.
-- [ ] Real store (human, after committing) -- run `sweep`, then `report`; record the table, per-class caveats and run time in Implementation Notes.
-- [ ] Results write-up (after the sweep) -- state that this protocol trains on the whole bedroom (S1-S5), whereas SHARP trains on S1 only. Decided by the human in code review, 2026-11-05: this meets the epic's "the report states" criterion, and `report.py` stays unchanged.
+- [x] Real store (human, after committing) -- run `sweep`, then `report`; record the table, per-class caveats and run time in Implementation Notes.
+- [x] Results write-up (after the sweep) -- state that this protocol trains on the whole bedroom (S1-S5), whereas SHARP trains on S1 only. Decided by the human in code review, 2026-11-05: this meets the epic's "the report states" criterion, and `report.py` stays unchanged.
 
 **Acceptance Criteria:**
 - Given the `padova` adapter, when the plans are generated, then both directions are written under `splits/padova/`, ready to commit, with validation from the train room only.
@@ -99,6 +99,32 @@ Code review 2026-11-05: 1 decision, 4 patch, 2 defer, 6 rejected.
 - `tests/test_time_block.py`: `test_committed_plans_are_consistent` required every recording to fall in a part of its plan. Padova's third room breaks that by design, because `room_holdout` leaves recordings outside the plan's rooms all empty. The check now allows this for `room_holdout` only.
 - One-cell smoke run in a scratch store (`bedroom→laboratory`, `amplitude_stats`, `knn`, `w50`, dirty tree): done, and `report --include-dirty` showed the `padova / room_holdout` section with intervals and the `*` footnote. Test macro-F1 18.88 [18.38, 19.39]. This checks the wiring only; the real store has no cross-room runs yet.
 - The results write-up follows the sweep. Still open: the 144-run sweep, `report`, and recording the table and run time here.
+
+**2026-11-07, sweep and `report` done (human ran them). Story closed.**
+- Sweep: 144 of 144 runs `done`, 0 dirty, all at commit `0d39871`. The `padova / room_holdout` section shows the columns `bedroom→laboratory` and `bedroom→living_room` with intervals, so AC2 holds. `git diff --stat f362cd6 -- src/` is empty, so AC3 holds.
+- Run time: about 32 h, from 2026-11-05 18:11 to 2026-11-07 04:11 UTC, `--workers 4`. The first attempt was killed by the out-of-memory killer during the fifth run (`random_forest`, 4 parallel forest candidates), after 4 runs had finished. After 8 GiB of swap was added, the sweep resumed and skipped those 4. RBF `svm` takes about 95% of the time: 15–23 min per run without mRMR and 40–50 min with it. One outlier took 326 min, likely while swapping.
+- `report` table, test macro-F1 % with 95% interval:
+
+| Method | bedroom→laboratory | bedroom→living_room |
+|---|---|---|
+| `amplitude_stats` / none or mRMR / `knn` | 18.88 [18.38, 19.39] | 7.87 [7.02, 8.82] |
+| `amplitude_stats` / mRMR / `random_forest` | 15.21 [14.62, 15.80] | 7.85 [7.13, 8.62] |
+| `amplitude_stats` / none / `random_forest` | 15.13 [14.60, 15.66] | 8.02 [7.27, 8.83] |
+| `amplitude_stats` / none or mRMR / `svm` | 12.89 [12.66, 13.14] | 11.27 [10.56, 12.10] |
+| `paper_beamforming` or both / mRMR / `knn` | 16.63 [15.90, 17.35] | 18.04 [16.57, 19.30] |
+| `paper_beamforming` or both / mRMR / `random_forest` | 19.36 [17.74, 20.90] | 21.04 [19.63, 22.51] |
+| `paper_beamforming` or both / mRMR / `svm` | 18.09 [17.13, 19.03] | 19.48 [18.57, 20.34] |
+| both / none / `knn` | 10.13 [9.43, 10.70] | 10.14 [9.07, 11.23] |
+| both / none / `random_forest` | 12.71 [11.81, 13.25] | 11.80 [11.30, 12.34] |
+| both / none / `svm` | 11.09 [9.14, 12.82] | 10.55 [9.90, 11.18] |
+| `paper_beamforming` / none / `knn` | 13.57 [12.78, 14.11] | 14.79 [14.11, 15.68] |
+| `paper_beamforming` / none / `random_forest` | 15.14 [14.01, 16.24] | 18.62 [16.72, 20.48] |
+| `paper_beamforming` / none / `svm` | 18.24 [17.57, 18.90] | 14.32 [13.75, 15.04] |
+
+- Rows merged above are identical in `report`: `amplitude_stats` has 3 features, so mRMR with `k=3` keeps them all, and with both sets mRMR keeps only `paper_beamforming` features.
+- Per-class caveats: every cell carries `*`. In `laboratory`, empty, walking, running, standing, sit_stand and arm_gym have a single test recording; in `living_room`, standing, sit_stand and arm_gym do.
+- The one-cell smoke run's 18.88 [18.38, 19.39] matches the real `amplitude_stats` / `knn` laboratory cell.
+- Results write-up: `_bmad-output/reports/padova-cross-room-6-2.md`. It states that this protocol trains on the whole bedroom (S1–S5) whereas SHARP trains on S1 only, and sets the cross-room scores beside same-room `time_block` scores computed from `runs/index.parquet`, since `report` still shows those cells as `-`. Same-room best is 61.87 (bedroom), 78.16 (laboratory) and 66.15 (living_room), against 19.36–21.04 best cross-room.
 
 ## Spec Change Log
 
