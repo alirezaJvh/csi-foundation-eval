@@ -1642,3 +1642,154 @@ def test_real_lwm_end_to_end(tmp_path, monkeypatch, capsys):
     stats = _provenance(run_id, root)["extractor_input_stats"]["lwm"]
     assert len(stats) == 4
     assert all(0.1 <= s["median_abs"] <= 10 for s in stats.values())
+
+
+def _context_files(cache_root: Path) -> dict[str, dict[str, np.ndarray]]:
+    out = {}
+    for path in sorted((cache_root / "context").glob("*.npz")):
+        with np.load(path) as data:
+            out[path.name] = {k: data[k] for k in data.files}
+    return out
+
+
+def _run_log(root: Path) -> str:
+    (run_dir,) = rs.iter_run_dirs(root)
+    return (run_dir / "run.log").read_text(encoding="utf-8")
+
+
+def _spy_contexts_parallel(monkeypatch) -> list[int]:
+    from csi_bench.runner import run as run_module
+
+    calls: list[int] = []
+    original = run_module._compute_contexts_parallel
+
+    def spy(*args, **kwargs):
+        calls.append(len(args[4]))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(run_module, "_compute_contexts_parallel", spy)
+    return calls
+
+
+def test_parallel_block_contexts_match_serial_path(tmp_path, monkeypatch):
+    from csi_bench.runner import run as run_module
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(run_module, "_fork_is_safe", lambda log: True)
+    calls = _spy_contexts_parallel(monkeypatch)
+    changes = {"preprocessing": ["ant2"], "extractors": [{"name": "paper_beamforming"}]}
+    one, m_one = _run_capture(tmp_path, monkeypatch, "one", 1, **changes)
+    assert calls == []
+    serial_log = _run_log(tmp_path / "runs_one").count(" computed")
+    many, m_many = _run_capture(tmp_path, monkeypatch, "many", 3, **changes)
+    assert len(calls) == 1 and calls[0] >= 2
+    # every block was computed in the pool phase and logged by the parent, then served
+    # from the cache by the unchanged getter
+    text = _run_log(tmp_path / "runs_many")
+    assert text.count(" computed") == calls[0] == serial_log
+    assert text.count(" cached") == calls[0]
+    serial, parallel = (
+        _context_files(tmp_path / "cache_one"),
+        _context_files(tmp_path / "cache_many"),
+    )
+    assert serial.keys() == parallel.keys() and len(serial) == calls[0]
+    for name, arrays in serial.items():
+        assert arrays.keys() == parallel[name].keys()
+        for k, v in arrays.items():
+            assert v.dtype == parallel[name][k].dtype
+            assert v.tobytes() == parallel[name][k].tobytes()
+    assert one.feature_names == many.feature_names
+    assert one.values.tobytes() == many.values.tobytes()
+    assert m_one["seeds"] == m_many["seeds"]
+
+
+def test_parallel_block_contexts_skip_cached_blocks(tmp_path, monkeypatch):
+    from csi_bench.runner import run as run_module
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(run_module, "_fork_is_safe", lambda log: True)
+    calls = _spy_contexts_parallel(monkeypatch)
+    base = {"preprocessing": ["ant2"], "extractors": [{"name": "paper_beamforming"}]}
+    cache = tmp_path / "cache"
+    first = _config_file(tmp_path, selection={"rooms": ["r1"]}, **base)
+    assert run(first, tmp_path / "runs_a", cache, 3) == 0
+    r1_blocks = calls[-1]
+    both = _config_file(tmp_path, selection={"rooms": ["r1", "r2"]}, window_len=30, **base)
+    assert run(both, tmp_path / "runs_b", cache, 3) == 0
+    # only r2's blocks are new; r1's are served from the cache
+    assert len(calls) == 2 and calls[-1] == r1_blocks
+    text = _run_log(tmp_path / "runs_b")
+    assert text.count(" computed") == r1_blocks
+    assert text.count(" cached") == 2 * r1_blocks
+    assert len(list((cache / "context").glob("*.npz"))) == 2 * r1_blocks
+
+
+@pytest.mark.parametrize("case", ["fork_unsafe", "one_worker", "one_missing"])
+def test_parallel_block_contexts_fall_back_to_serial(tmp_path, monkeypatch, case):
+    from csi_bench.adapters.extractors.paper_beamforming import PaperBeamforming
+    from csi_bench.runner import run as run_module
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(run_module, "_fork_is_safe", lambda log: case != "fork_unsafe")
+    calls = _spy_contexts_parallel(monkeypatch)
+    computed: list[int] = []
+    original = PaperBeamforming.compute_context
+
+    def spy(self, block):
+        computed.append(1)
+        return original(self, block)
+
+    monkeypatch.setattr(PaperBeamforming, "compute_context", spy)
+    base = {"preprocessing": ["ant2"], "extractors": [{"name": "paper_beamforming"}]}
+    cache = tmp_path / "cache"
+    workers = 1 if case == "one_worker" else 3
+    config = _config_file(tmp_path, selection={"rooms": ["r1"]}, **base)
+    if case == "one_missing":
+        assert run(config, tmp_path / "runs_warm", cache, 1) == 0
+        files = sorted((cache / "context").glob("*.npz"))
+        files[0].unlink()
+        computed.clear()
+        config = _config_file(tmp_path, selection={"rooms": ["r1"]}, window_len=30, **base)
+    assert run(config, tmp_path / "runs", cache, workers) == 0
+    assert calls == []
+    # serial path: every compute ran in this process, where the spy sees it
+    expected = 1 if case == "one_missing" else len(list((cache / "context").glob("*.npz")))
+    assert len(computed) == expected
+
+
+def test_parallel_block_contexts_keep_finished_blocks_when_a_task_fails():
+    from types import SimpleNamespace
+
+    from csi_bench.core.errors import ExtractorError
+    from csi_bench.runner import run as run_module
+
+    class Failing:
+        def compute_context(self, block):
+            if block[0, 0, 0] == 2:
+                raise ExtractorError("block 2 failed")
+            return block[0, :, 0].copy()
+
+    by_id = {
+        f"r{i}": SimpleNamespace(csi=np.full((1, 4, 1), i, dtype=np.float32)) for i in range(4)
+    }
+    bounds = {rec_id: {"train": (0, 4)} for rec_id in by_id}
+    missing = [(f"k{i}", f"r{i}", "train") for i in range(4)]
+    stored: dict[str, np.ndarray] = {}
+    cache = SimpleNamespace(put=stored.__setitem__)
+    with pytest.raises(ExtractorError, match="block 2 failed"):
+        run_module._compute_contexts_parallel(
+            Failing(),
+            SimpleNamespace(name="fake"),
+            by_id,
+            bounds,
+            missing,
+            2,
+            cache,
+            logging.getLogger("test"),
+        )
+    # the blocks before the failing one in key order were cached; nothing after it
+    assert sorted(stored) == ["k0", "k1"]
+    assert run_module._FORK_STATE is None

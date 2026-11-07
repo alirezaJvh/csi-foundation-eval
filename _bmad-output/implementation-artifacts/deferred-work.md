@@ -155,3 +155,7 @@
 
 - The Padova `time_block` `-` cells, logged above, now block Story 6.2's reading too: `report` gives no same-room number beside the cross-room columns (`src/csi_bench/runner/report.py:421`). Any comparison must also state that the `b6010d87ce4d` baseline trains on fractions 0.6/0.2/0.2, against 0.75/0.25 for the holdout plans.
 - Repo-wide verification does not pass as Story 6.2's spec expects: `ruff check` has 3 errors in `notebooks/01_classical_overview.ipynb`, `ruff format --check` flags 1 file and `ty check` has 10 diagnostics, including the errors already logged for `tests/test_sweep.py:331`. The three test files this story changes pass `ruff`, and none of the `ty` diagnostics are in lines it touches.
+
+## Deferred from: code review of spec-6-3-padova-sharp-comparable-run.md (2026-11-07)
+
+- Unverified, would be medium: the parallel block-context pool (`_compute_contexts_parallel`, `src/csi_bench/runner/run.py`) has no memory-aware cap and no serial fallback if a forked child is OOM-killed (`BrokenProcessPool` aborts the run). The cold-cache `padova_sharp` sweep with `--workers > 1` settles it: check `max_child_peak_rss_mb` on the extraction log lines against the 11 GB machine.

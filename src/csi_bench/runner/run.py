@@ -134,7 +134,7 @@ def _fork_is_safe(log: logging.Logger) -> bool:
 
 
 # Set in the parent right before the pool forks, so workers share the recordings copy-on-write.
-_FORK_STATE: tuple[Any, Any, dict[str, Recording]] | None = None
+_FORK_STATE: tuple[Any, ...] | None = None
 
 
 def _extract_chunk(bounds: tuple[int, int]) -> FeatureMatrix:
@@ -144,6 +144,13 @@ def _extract_chunk(bounds: tuple[int, int]) -> FeatureMatrix:
     return extractor.extract(
         [by_id[w.recording_id].csi[:, w.start : w.end, :] for w in windows[start:stop]]
     )
+
+
+def _compute_context_task(task: tuple[str, int, int]) -> np.ndarray:
+    assert _FORK_STATE is not None
+    extractor, by_id = _FORK_STATE
+    recording_id, start, end = task
+    return extractor.compute_context(by_id[recording_id].csi[:, start:end, :])
 
 
 def _chunk_bounds(n_items: int, n_chunks: int) -> list[tuple[int, int]]:
@@ -226,6 +233,59 @@ def _block_context_getter(
         return context
 
     return get
+
+
+def _missing_contexts(
+    config: ExperimentConfig,
+    spec: Any,
+    fitted: Sequence[dict],
+    windows: Any,
+    by_id: dict[str, Recording],
+    bounds: Mapping[str, Mapping[str, tuple[int, int]]],
+    cache: ContextCache,
+) -> list[tuple[str, str, str]]:
+    """`(key, recording_id, split)` of the blocks the windows need that the cache lacks,
+    sorted by key; keys use the same arguments as `_block_context_getter`."""
+    blocks = sorted({(w.recording_id, w.split) for w in windows})
+    missing: dict[str, tuple[str, str, str]] = {}
+    for recording_id, split in blocks:
+        rec = by_id[recording_id]
+        key = context_cache_key(
+            config, spec, fitted, recording_id, rec.meta.source_sha256, bounds[recording_id][split]
+        )
+        if key not in missing and cache.get(key) is None:
+            missing[key] = (key, recording_id, split)
+    return [missing[key] for key in sorted(missing)]
+
+
+def _compute_contexts_parallel(
+    extractor: Any,
+    spec: Any,
+    by_id: dict[str, Recording],
+    bounds: Mapping[str, Mapping[str, tuple[int, int]]],
+    missing: Sequence[tuple[str, str, str]],
+    workers: int,
+    cache: ContextCache,
+    log: logging.Logger,
+) -> None:
+    """Compute missing block contexts in a fork pool; only the parent writes the cache.
+
+    Each context is cached as it arrives (in key order), so a failing task keeps the
+    blocks finished before it.
+    """
+    global _FORK_STATE
+    tasks = [(rec_id, *bounds[rec_id][split]) for _, rec_id, split in missing]
+    _FORK_STATE = (extractor, by_id)
+    try:
+        with ProcessPoolExecutor(
+            max_workers=min(workers, len(tasks)), mp_context=multiprocessing.get_context("fork")
+        ) as pool:
+            contexts = pool.map(_compute_context_task, tasks)
+            for (key, recording_id, split), context in zip(missing, contexts, strict=True):
+                cache.put(key, context)
+                log.info("block context %s %s:%s computed", spec.name, recording_id, split)
+    finally:
+        _FORK_STATE = None
 
 
 def _extract_parallel(extractor: Any, windows: Any, by_id: Any, workers: int) -> FeatureMatrix:
@@ -441,6 +501,21 @@ def _extract(
                     and bounds is not None
                     and hasattr(extractor, "compute_context")
                 ):
+                    if workers > 1:
+                        missing = _missing_contexts(
+                            config, spec, fitted, windows, by_id, bounds, context_cache
+                        )
+                        if len(missing) >= 2 and _fork_is_safe(log):
+                            _compute_contexts_parallel(
+                                extractor,
+                                spec,
+                                by_id,
+                                bounds,
+                                missing,
+                                workers,
+                                context_cache,
+                                log,
+                            )
                     block_context = _block_context_getter(
                         config, spec, fitted, extractor, by_id, bounds, context_cache, log
                     )
