@@ -35,7 +35,7 @@ class Knn:
     ) -> None:
         candidates = [lambda k=k: KNeighborsClassifier(n_neighbors=k) for k in self.params.k_grid]
         self._scaler, self._model, _, self.val_score = tune_and_refit(
-            candidates, train, y_train, val, y_val
+            candidates, train, y_train, val, y_val, parallel_refit=True
         )
 
     def predict(self, features: FeatureMatrix) -> np.ndarray:

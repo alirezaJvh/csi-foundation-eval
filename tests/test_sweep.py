@@ -558,3 +558,18 @@ def test_lwm_sweep_expands(monkeypatch):
     }
     assert {c.extractors[0].params["embedding"] for c in configs} == {"cls", "channel_mean"}
     assert all(c.feature_selection is None and c.role == "comparison" for c in configs)
+
+
+def test_csi_bench_hp_parallel_parts_match_the_sweep(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    full = yaml.safe_load((ROOT / "experiments/csi_bench_hp_classical_baseline.yaml").read_text())
+    expected = {compute_run_id(c) for _, c in expand_sweep(full, "csi_bench_hp_classical_baseline")}
+    parts = sorted((ROOT / "experiments/csi_bench_hp_parallel").glob("*.yaml"))
+    assert len(parts) == 8
+    ids: list[str] = []
+    for path in parts:
+        raw = yaml.safe_load(path.read_text())
+        ids += [compute_run_id(c) for _, c in expand_sweep(raw, path.stem)]
+    assert len(ids) == len(set(ids)) == 576
+    assert set(ids) == expected

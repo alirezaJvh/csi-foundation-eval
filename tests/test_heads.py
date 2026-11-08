@@ -1,6 +1,7 @@
 import sys
 from typing import Any
 
+import joblib
 import numpy as np
 import pytest
 from pydantic import ValidationError
@@ -113,6 +114,21 @@ def test_test_labels_never_reach_fit(name):
     assert len(recorder.seen) == 2
     np.testing.assert_array_equal(recorder.seen[0], y_train)
     np.testing.assert_array_equal(recorder.seen[1], y_val)
+
+
+@pytest.mark.parametrize("name", ["knn", "random_forest"])
+def test_parallel_refit_uses_workers_and_keeps_predictions(name):
+    train, y_train = _part(40, 0)
+    val, y_val = _part(20, 1)
+    test, _ = _part(10, 2)
+    predictions = []
+    for workers in (1, 3):
+        head = _make(name)(0)
+        with joblib.parallel_config(n_jobs=workers):
+            head.fit(train, y_train, val, y_val)
+        assert head._model.n_jobs == workers
+        predictions.append(head.predict(test))
+    np.testing.assert_array_equal(predictions[0], predictions[1])
 
 
 def test_grid_selected_on_val_only_and_refit_on_union():

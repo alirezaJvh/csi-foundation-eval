@@ -22,12 +22,15 @@ def tune_and_refit(
     y_train: np.ndarray,
     val: FeatureMatrix,
     y_val: np.ndarray,
+    parallel_refit: bool = False,
 ) -> tuple[StandardScaler, Any, int, float]:
     """Pick the candidate with the best val macro-F1, then refit it on train ∪ val.
 
     Each candidate is a factory returning a fresh unfitted model. One scaler is fitted
     on train and every candidate is fitted and scored in that scaled space; the first
     best wins ties. The scaler and the winning model are then refitted on train ∪ val.
+    `parallel_refit` gives the final model `n_jobs` equal to the runner's worker count, for
+    models whose result does not depend on `n_jobs`; the refit runs alone, so the workers are free.
     Returns the final scaler, the final model, the chosen candidate index and its val macro-F1.
     """
     if not candidates:
@@ -47,5 +50,8 @@ def tune_and_refit(
     x_raw = np.vstack([train.values, val.values])
     y_all = np.concatenate([y_train, y_val])
     final_scaler = StandardScaler().fit(x_raw)
-    final_model = candidates[best_index]().fit(final_scaler.transform(x_raw), y_all)
+    final_model = candidates[best_index]()
+    if parallel_refit:
+        final_model.set_params(n_jobs=joblib.effective_n_jobs(None))
+    final_model.fit(final_scaler.transform(x_raw), y_all)
     return final_scaler, final_model, best_index, best_f1

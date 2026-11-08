@@ -12,8 +12,8 @@ from csi_bench.core.head_search import tune_and_refit
 from csi_bench.core.registry import register
 
 # libsvm kernel cache in MB (default 200). Speed only, never the result; kept modest because
-# candidates are fitted in parallel.
-KERNEL_CACHE_MB = 500
+# candidates are fitted in parallel and several sweeps may run at once.
+KERNEL_CACHE_MB = 1000
 
 
 @register("head", "svm")
