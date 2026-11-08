@@ -1,0 +1,48 @@
+# CSI-Bench HP with windows sized for the activities (Story 6.4 amendment): 4 windows x 3 feature
+# sets x 2 selection x 3 heads x 8 room sets = 576 runs.
+# Why: the 20-50 packet grid of csi_bench_hp_classical_baseline.yaml (0.16-0.41 s at about 122 Hz)
+# is shorter than one step or breath, and stride 6 gives about 1.3M heavily overlapping pooled
+# windows, which makes the SVM impractical. That sweep is kept for comparison with the other
+# datasets; this one is the CSI-Bench result.
+# Windows: 122, 244, 366, 610 packets (about 1, 2, 3, 5 s; 5 s covers a breath). `@window` pairs
+# each window with stride = half the window (50 % overlap), about 10-50x fewer windows.
+# Plan d6b97e4f25b3 (time_block, fractions 0.6/0.2/0.2, gap 610): the gap is never shorter than
+# the longest window, so no window spans two blocks' neighbourhoods. csi_bench_hp now has two
+# block plans, so every command must name one (`split:` here, `--split` on the CLI).
+# Rooms are the CSI-Bench environments E01-E06 and E27: each room alone, then all seven pooled.
+# Preprocessing is ant2 for every cell (paper_beamforming requires exactly 2 antennas).
+# mrmr k stays <= 3, the smallest feature-set width (amplitude_stats).
+dataset: csi_bench_hp
+split: "d6b97e4f25b3"  # time_block, fractions 0.6/0.2/0.2, gap 610
+selection: {rooms: [E01]}
+preprocessing: [ant2]
+window_len: 122
+stride: 61
+extractors: [{name: amplitude_stats}]
+feature_selection: null
+head: {name: svm}
+seeds: [0]
+role: comparison
+sweep:
+  "@window":
+    - {window_len: 122, stride: 61}
+    - {window_len: 244, stride: 122}
+    - {window_len: 366, stride: 183}
+    - {window_len: 610, stride: 305}
+  extractors:
+    - [{name: amplitude_stats}]
+    - [{name: paper_beamforming}]
+    - [{name: amplitude_stats}, {name: paper_beamforming}]
+  feature_selection:
+    - null
+    - {mrmr: {k: [2, 3]}}
+  head.name: [svm, knn, random_forest]
+  selection.rooms:
+    - [E01]
+    - [E02]
+    - [E03]
+    - [E04]
+    - [E05]
+    - [E06]
+    - [E27]
+    - [E01, E02, E03, E04, E05, E06, E27]

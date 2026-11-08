@@ -37,6 +37,7 @@ context:
 - `DataError` naming the file when an in-scope file has no `csi_trace.csi`, is not complex, is not shaped `(2, 2, 58, packets)`, or has non-finite values or an all-zero packet; also for a missing root or no in-scope files. Out-of-scope files are skipped, never errors.
 - Sweep `experiments/csi_bench_hp_classical_baseline.yaml`: `classical_baseline.yaml` grid with `dataset: csi_bench_hp`, the committed split, `stride: 6` (≈50 ms at ≈122 Hz, the Padova rule; not tuned) and the room axis.
 - **Decision (2026-11-07): room axis = each room alone plus all 7 pooled**, `[[E01], [E02], [E03], [E04], [E05], [E06], [E27], [E01, …, E27]]` → 4×3×2×3×8 = 576 runs.
+- **Decision (2026-11-08, amendment): long-window sweep `experiments/csi_bench_hp_long_windows.yaml`.** Windows 122, 244, 366, 610 packets (≈1, 2, 3, 5 s at ≈122 Hz), each paired with stride = half the window (61, 122, 183, 305; `@window`), on a second `time_block` plan with gap 610 (never shorter than the longest window). Features, selection, heads and room axis as above → 4×3×2×3×8 = 576 runs. Reason: 20–50 packets (0.16–0.41 s) is shorter than one step or breath, and stride 6 gives ≈1.3 M heavily overlapping pooled windows, which makes the RBF SVM impractical (one pooled SVM run took over 7 h). `csi_bench_hp_classical_baseline.yaml` stays as the cross-dataset comparison; the long-window sweep is the CSI-Bench result.
 
 **Never:**
 - No raw or converted data in git. No change to `core/`, `runner/`, `config/` or other adapters.
@@ -75,11 +76,14 @@ context:
 - [x] `tests/test_csi_bench_hp.py` -- synthetic fixtures for every matrix row; tx0 slicing and axis order against a hand-built array; cache hit and re-convert on change; real-data test (438 recordings, 7 rooms × 5 classes, shapes, contract check) and committed-plan pin.
 - [x] `splits/csi_bench_hp/<split_hash>.json` -- generate and commit the `time_block` plan.
 - [x] `experiments/csi_bench_hp_classical_baseline.yaml` + expansion test in `tests/test_sweep.py` -- run count, stride 6, dataset/split, room axis, grid equal to `classical_baseline.yaml` apart from rooms.
+- [x] (amendment 2026-11-08) `splits/csi_bench_hp/d6b97e4f25b3.json` -- `time_block` plan with gap 610, generated with `TimeBlock(TimeBlock.Params(gap_packets=610)).split(recs, "csi_bench_hp")` + `write_split_plan`; pinned beside the gap-64 plan in `tests/test_csi_bench_hp.py` `test_real_dataset`.
+- [x] (amendment 2026-11-08) `experiments/csi_bench_hp_long_windows.yaml` + `test_csi_bench_hp_long_windows_sweep_expands` in `tests/test_sweep.py` -- 576 runs, 144 per (window, stride) pair, plan params (0.6/0.2/0.2, gap 610), window ≤ gap, room axis.
 
 **Acceptance Criteria:**
-- Given the extracted data, when `uv run csi-bench describe csi_bench_hp` runs, then it prints counts per class and room and writes `runs/_dataset/csi_bench_hp.parquet`.
+- Given the extracted data, when `uv run csi-bench describe csi_bench_hp --split a17121b9b216` runs (since the amendment the dataset has two plans, so `--split` is required), then it prints counts per class and room and writes `runs/_dataset/csi_bench_hp.parquet`.
 - Given the committed plan, when a run loads it, then every class has train, val and test windows.
 - Given the sweep, when one cell runs and then `report`, then a `csi_bench_hp / time_block` section appears.
+- Given the long-window sweep, when one cell runs and then `report`, then its runs appear in their own `csi_bench_hp / time_block, gap_packets 610` section.
 - Given the finished story, when `git diff --stat` runs, then `src/` changes are only in `adapters/datasets/`, plus the new tests, split and experiment file.
 
 ### Review Findings
@@ -122,8 +126,12 @@ Code review 2026-11-07 (Blind Hunter, Edge Case Hunter, Verification Gap, Accept
 - The all-zero check is per receive chain and packet (stricter than per packet); the real data passes it.
 - `ruff check`/`ruff format --check` fail only on `notebooks/01_classical_overview.ipynb` and `ty check` reports 12 diagnostics in `runner/` and older tests; all pre-existing at the baseline, none in the new files.
 - Smoke run: `amplitude_stats | none | knn`, E06, w40 -> `csi_bench_hp / time_block` report section (F1 57.3, dirty-tree run, so `report --include-dirty`).
+- Amendment (2026-11-08): plan `splits/csi_bench_hp/d6b97e4f25b3.json` (time_block 0.6/0.2/0.2, gap 610), 438 recordings, shortest 6,843 packets, so the shortest val/test block (≈1,368 packets) still holds windows of 610. With two plans `describe csi_bench_hp` needs `--split`, as for `padova_sharp`; both sweep files name their split. Expected pooled window counts: ≈130 k at w122 down to ≈27 k at w610, against ≈1.34 M at w20/stride 6.
+- Speed-up for the 20–50 sweep (commit `d424372`, outside this story's scope rule, results unchanged): `experiments/csi_bench_hp_parallel/` splits it into 8 files with the same 576 run ids so several sweeps run at once; `tune_and_refit(parallel_refit=True)` gives the knn and random_forest refit `n_jobs` = runner workers; SVM kernel cache 1000 MB. Run sweeps with `ulimit -n 4096`: the loader keeps all 438 memmaps open, which exceeds macOS's default 256 open files.
 
 ## Spec Change Log
+
+- 2026-11-08 (human renegotiation): added the long-window sweep decision, its gap-610 plan, tasks and acceptance; `describe` now needs `--split`. Trigger: the 20–50 grid is too short for the activities and its SVM cells take hours. The original sweep and its results are kept.
 
 ## Review Triage Log
 
@@ -140,5 +148,5 @@ Check (2026-11-07, all 438 files): 151 sessions (session = file name without ser
 
 **Commands:**
 - `uv run ruff check && uv run ruff format --check && uv run ty check && uv run lint-imports && uv run pytest` -- expected: all pass
-- `uv run csi-bench describe csi_bench_hp` -- expected: 5 classes × 7 rooms, no errors
+- `uv run csi-bench describe csi_bench_hp --split a17121b9b216` (and `--split d6b97e4f25b3`) -- expected: 5 classes × 7 rooms, no errors
 - one sweep cell + `uv run csi-bench report` -- expected: `csi_bench_hp / time_block` section
