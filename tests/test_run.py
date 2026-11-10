@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 import sys
 import threading
@@ -1793,3 +1794,163 @@ def test_parallel_block_contexts_keep_finished_blocks_when_a_task_fails():
     # the blocks before the failing one in key order were cached; nothing after it
     assert sorted(stored) == ["k0", "k1"]
     assert run_module._FORK_STATE is None
+
+
+# --- device option (Story 6.5) -------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_backends(monkeypatch):
+    """Pretend mps and cuda exist and record the default device instead of setting it."""
+    import torch
+
+    devices: list[str] = []
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch, "set_default_device", devices.append)
+    # set, then delete: an absent variable would record nothing for monkeypatch to restore
+    monkeypatch.setenv("CUBLAS_WORKSPACE_CONFIG", "")
+    monkeypatch.delenv("CUBLAS_WORKSPACE_CONFIG")
+    return devices
+
+
+def test_resolve_device_sources(monkeypatch, fake_backends):
+    from csi_bench.core.errors import ConfigError
+    from csi_bench.runner.run import resolve_device
+
+    monkeypatch.delenv("CSI_BENCH_DEVICE", raising=False)
+    assert resolve_device(None) == "cpu"
+    assert resolve_device("mps") == "mps"
+    assert resolve_device("cuda") == "cuda"
+    monkeypatch.setenv("CSI_BENCH_DEVICE", " ")
+    assert resolve_device(None) == "cpu"
+    monkeypatch.setenv("CSI_BENCH_DEVICE", "mps")
+    assert resolve_device(None) == "mps"
+    assert resolve_device("cpu") == "cpu"  # the flag wins over the environment
+    monkeypatch.setenv("CSI_BENCH_DEVICE", "tpu")
+    with pytest.raises(ConfigError, match="CSI_BENCH_DEVICE"):
+        resolve_device(None)
+    with pytest.raises(ConfigError, match="--device"):
+        resolve_device("gpu")
+
+
+@pytest.mark.parametrize("device", ["mps", "cuda"])
+def test_unavailable_backend_is_a_config_error(monkeypatch, device):
+    import torch
+
+    from csi_bench.core.errors import ConfigError
+    from csi_bench.runner.run import resolve_device
+
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    with pytest.raises(ConfigError, match=f"{device} is not available"):
+        resolve_device(device)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["run", "CONFIG"],
+        ["sweep", "CONFIG"],
+        ["rescore-runs", "--runs", "RUNS", "--backup", "BACKUP"],
+    ],
+)
+@pytest.mark.parametrize("device", ["gpu", "cuda"])
+def test_bad_device_exits_2_before_any_run(tmp_path, monkeypatch, capsys, argv, device):
+    import torch
+
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    replace = {
+        "CONFIG": _config_file(tmp_path),
+        "RUNS": str(tmp_path / "runs"),
+        "BACKUP": str(tmp_path / "backup"),
+    }
+    assert main([replace.get(a, a) for a in argv] + ["--device", device]) == 2
+    assert "--device" in capsys.readouterr().err
+    assert _run_dirs(tmp_path) == []
+    assert not (tmp_path / "backup").exists()
+
+
+def test_device_env_is_read_by_the_cli(tmp_path, monkeypatch, capsys):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CSI_BENCH_DEVICE", "gpu")
+    assert main(["run", _config_file(tmp_path)]) == 2
+    assert "CSI_BENCH_DEVICE" in capsys.readouterr().err
+    assert main(["run", _config_file(tmp_path), "--device", "cpu"]) == 0
+
+
+def test_device_is_runtime_only(tmp_path, monkeypatch, capsys, fake_packets, fake_backends):
+    """cpu then mps: equal run_id, separate packet cache entries, each provenance names its
+    device."""
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    cache = tmp_path / "cache"
+    config = _config_file(tmp_path, **PACKET_CONFIG)
+    assert run(config, tmp_path / "runs_cpu", cache) == 0
+    on_cpu = _run_id(capsys)
+    assert run(config, tmp_path / "runs_mps", cache, device="mps") == 0
+    on_mps = _run_id(capsys)
+    assert on_cpu == on_mps
+    assert fake_backends == ["cpu", "mps"]
+    assert len(fake_packets) == 8  # mps re-embeds: no cpu entry is reused
+    cpu_prov = _provenance(on_cpu, tmp_path / "runs_cpu")
+    mps_prov = _provenance(on_mps, tmp_path / "runs_mps")
+    assert (cpu_prov["device"], cpu_prov["runtime"]["device"]) == ("cpu", "cpu")
+    assert (mps_prov["device"], mps_prov["runtime"]["device"]) == ("mps", "mps")
+    cpu_keys = {e["key"] for e in cpu_prov["feature_cache"]}
+    mps_keys = {e["key"] for e in mps_prov["feature_cache"]}
+    assert len(cpu_keys) == len(mps_keys) == 4 and not cpu_keys & mps_keys
+    assert all(not e["hit"] for e in mps_prov["feature_cache"])
+    assert len(list((cache / "packets").glob("*.npz"))) == 8
+    assert "CUBLAS_WORKSPACE_CONFIG" not in os.environ
+
+
+def test_cuda_sets_the_cublas_workspace(tmp_path, monkeypatch, capsys, fake_backends):
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert main(["run", _config_file(tmp_path), "--device", "cuda"]) == 0
+    run_id = _run_id(capsys)
+    assert os.environ["CUBLAS_WORKSPACE_CONFIG"] == ":4096:8"
+    assert fake_backends == ["cuda"]
+    assert _provenance(run_id, tmp_path / "runs")["runtime"]["device"] == "cuda"
+
+
+def test_finished_run_on_another_device_is_kept_with_a_warning(
+    tmp_path, monkeypatch, capsys, fake_backends
+):
+    """Existing runs are never rerun for a new device: run and sweep skip and warn."""
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    config = _config_file(tmp_path)
+    assert main(["run", config]) == 0
+    run_id = _run_id(capsys)
+    before = _provenance(run_id, tmp_path / "runs")
+    assert main(["run", config]) == 0  # same device: silent
+    assert "warning" not in capsys.readouterr().err
+    assert main(["run", config, "--device", "mps"]) == 0
+    err = capsys.readouterr().err
+    assert f"warning: {run_id}: finished on cpu, not mps" in err
+    assert main(["sweep", config, "--device", "mps"]) == 0
+    captured = capsys.readouterr()
+    assert f"{run_id} skipped" in captured.out
+    assert "finished on cpu, not mps" in captured.err
+    assert _provenance(run_id, tmp_path / "runs") == before
+    assert fake_backends == ["cpu"]
+
+
+def test_sweep_passes_the_device(tmp_path, monkeypatch, fake_backends):
+    from csi_bench.runner import run as run_module
+
+    seen: list[str] = []
+
+    def fake_execute(*args, device="cpu", **kwargs):
+        seen.append(device)
+
+    monkeypatch.setattr(run_module, "_execute", fake_execute)
+    _make_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert run_module.run_sweep(_config_file(tmp_path), device="mps") == 0
+    assert seen == ["mps"]

@@ -399,6 +399,55 @@ def test_rescore_workers_flag(store, monkeypatch, capsys):
     assert seen == [2, 2]
 
 
+def test_rescore_device_flag(store, monkeypatch, capsys):
+    import torch
+
+    from csi_bench.runner import rescore
+
+    root, backup, _ = store
+    args = ["rescore-runs", "--runs", str(root), "--backup", str(backup)]
+    before = _files(root)
+    assert main([*args, "--device", "gpu"]) == 2
+    assert "--device" in capsys.readouterr().err
+    assert _files(root) == before
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+    seen = []
+    monkeypatch.setattr(rescore, "_execute", lambda *a, **k: seen.append(k["device"]))
+    assert main([*args, "--device", "mps"]) == 0
+    assert seen == ["mps", "mps"]
+
+
+def test_rescore_uses_each_runs_recorded_device(store, monkeypatch, capsys):
+    import torch
+
+    from csi_bench.runner import rescore
+
+    root, backup, ids = store
+    path = rs.provenance_path(ids[1], root)
+    document = json.loads(path.read_text())
+    document["device"] = "mps"
+    path.write_text(json.dumps(document))
+    monkeypatch.setenv("CSI_BENCH_DEVICE", "cuda")  # ignored: the recorded device wins
+    seen = {}
+    monkeypatch.setattr(
+        rescore, "_execute", lambda config, f, run_id, *a, **k: seen.update({run_id: k["device"]})
+    )
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+    assert _rescore(root, backup, capsys)[0] == 0
+    assert seen == {ids[0]: "cpu", ids[1]: "mps"}
+    seen.clear()
+    args = ["rescore-runs", "--runs", str(root), "--backup", str(backup), "--device", "cpu"]
+    assert main(args) == 0
+    capsys.readouterr()
+    assert seen == {ids[0]: "cpu", ids[1]: "cpu"}  # an explicit --device overrides
+    seen.clear()
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
+    code, out = _rescore(root, backup, capsys)
+    assert code == 1  # only the mps run fails; the cpu run still reruns
+    assert seen == {ids[0]: "cpu"}
+    assert f"error: {ids[1]}: " in out.err and "mps is not available" in out.err
+
+
 def test_dirty_tree_is_refused_before_anything_changes(store, monkeypatch, capsys):
     from csi_bench.runner import rescore
 

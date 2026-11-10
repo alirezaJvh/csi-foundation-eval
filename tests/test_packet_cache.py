@@ -47,9 +47,25 @@ def features() -> PacketFeatures:
     )
 
 
-def key(changes=None, fitted=None, recording="tor_vergata/r1_empty", sha="abc") -> str:
+def key(changes=None, fitted=None, recording="tor_vergata/r1_empty", sha="abc", device=None) -> str:
     config = config_from_dict({**BASE, **(changes or {})})
-    return packet_cache_key(config, config.extractors[0], fitted or FITTED, recording, sha)
+    args = (config, config.extractors[0], fitted or FITTED, recording, sha)
+    return packet_cache_key(*args) if device is None else packet_cache_key(*args, device=device)
+
+
+# BASE's key before Story 6.5 added the device: cpu entries made before it stay valid.
+CPU_KEY = "eed88eb6d62c29c2b062cfd844f96e3628c2ed774f138c1812a26f55abec504a"
+
+
+def test_cpu_key_is_unchanged_by_the_device_option():
+    assert key() == CPU_KEY
+    assert key(device="cpu") == CPU_KEY
+
+
+def test_non_cpu_devices_get_their_own_keys():
+    keys = {key(device=d) for d in ("mps", "cuda")}
+    assert len(keys) == 2
+    assert CPU_KEY not in keys
 
 
 def test_roundtrip(tmp_path):

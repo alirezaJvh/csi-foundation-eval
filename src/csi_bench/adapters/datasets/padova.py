@@ -17,6 +17,7 @@ from scipy.io import loadmat
 
 from csi_bench.core.contracts import Recording, RecordingMeta
 from csi_bench.core.errors import DataError
+from csi_bench.core.npy_map import is_exhaustion, map_npy
 from csi_bench.core.registry import register
 
 logger = logging.getLogger(__name__)
@@ -89,8 +90,12 @@ def _open_cache(path: Path) -> np.ndarray | None:
     if not path.is_file():
         return None
     try:
-        csi = np.load(path, mmap_mode="r", allow_pickle=False)
-    except (ValueError, OSError, EOFError):
+        csi = map_npy(path)
+    except OSError as e:
+        if is_exhaustion(e):
+            raise
+        return None
+    except (ValueError, EOFError):
         return None
     if csi.ndim != 3 or csi.shape[0] != _N_ANTENNAS or csi.dtype != np.complex64:
         return None
@@ -117,12 +122,34 @@ def _read_index(path: Path) -> dict:
     """`{relative path: [size, mtime_ns, sha256]}`; empty when missing or unreadable."""
     try:
         index = json.loads(path.read_text())
-    except (OSError, ValueError):
+    except OSError as e:
+        if is_exhaustion(e):
+            raise
+        return {}
+    except ValueError:
         return {}
     return index if isinstance(index, dict) else {}
 
 
 def _load(
+    root: Path,
+    labels: dict[str, int],
+    prefix: str,
+    sets: frozenset[int] | None = None,
+) -> list[Recording]:
+    """`_load_all`, naming fd or mapping exhaustion instead of a bare OSError."""
+    try:
+        return _load_all(root, labels, prefix, sets)
+    except OSError as e:
+        if not is_exhaustion(e):
+            raise
+        raise DataError(
+            f"{root}: ran out of file descriptors, memory mappings or memory while loading: "
+            f"{e}; run fewer loads or workers in parallel"
+        ) from e
+
+
+def _load_all(
     root: Path,
     labels: dict[str, int],
     prefix: str,

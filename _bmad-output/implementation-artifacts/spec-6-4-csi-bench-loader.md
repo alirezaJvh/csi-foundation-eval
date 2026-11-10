@@ -125,6 +125,8 @@ Code review 2026-11-07 (Blind Hunter, Edge Case Hunter, Verification Gap, Accept
 
 ## Spec Change Log
 
+- 2026-11-10: After 6.4 was done, the Mac run added long-window CSI-Bench runs (w122/244/366/610, stride w/2, plan `d6b97e4f25b3`, commit `05237c4`) outside a story; Story 6.6 adopts and commits them. Parallel sweeps on the Mac hit `cache file unreadable` (w20 runs); Story 6.5 fixes it. The short-window classical CSI-Bench runs are incomplete and are not rerun now (sprint-change-proposal-2026-11-10).
+
 ## Review Triage Log
 
 - 2026-11-07: review skipped at the user's request (no code review); no findings recorded.

@@ -207,7 +207,7 @@ def test_cache_hit_and_invalidation(tmp_path, monkeypatch):
     monkeypatch.setattr(padova, "loadmat", boom)
     monkeypatch.setattr(Path, "read_bytes", boom)  # an unchanged file is not even hashed
     second = _load(tmp_path)[0]
-    assert isinstance(second.csi, np.memmap)
+    assert not second.csi.flags.owndata  # mapped from the cache file, not read into memory
     assert not second.csi.flags.writeable
     assert second.meta.source_sha256 == first.meta.source_sha256
     np.testing.assert_array_equal(first.csi, second.csi)

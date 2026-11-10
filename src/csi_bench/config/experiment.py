@@ -415,32 +415,36 @@ def packet_cache_key(
     fitted: Sequence[Mapping[str, Any]],
     recording_id: str,
     source_sha256: str,
+    device: str = "cpu",
 ) -> str:
     """Content key of one per_packet extractor's features for one whole recording (AD-10).
 
     No rooms, `window_len`, `stride`, pooler, head or seeds: every run over the same
-    preprocessed recording shares the entry, so changing them never re-embeds.
+    preprocessed recording shares the entry, so changing them never re-embeds. A non-cpu
+    `device` is part of the key, so GPU and CPU embeddings never mix; `cpu` adds nothing,
+    which keeps the keys of entries made before the device option.
     """
     dataset_cls = _check_adapter("dataset", AdapterSpec(name=config.dataset), "dataset")
     ext_cls = _check_adapter("extractor", spec, f"extractor {spec.name}")
-    return sha256_hex(
-        {
-            "kind": "packets",
-            "dataset": config.dataset,
-            "dataset_version": dataset_cls.VERSION,
-            "recording_id": recording_id,
-            "source_sha256": source_sha256,
-            "preprocessing": _step_entries(config),
-            "fitted_hash": sha256_hex(list(fitted)),
-            "extractor": {
-                "name": spec.name,
-                "params": registry.affecting_params(ext_cls.Params(**spec.params)),
-                "version": ext_cls.VERSION,
-                "vendor_hash": getattr(ext_cls, "VENDOR_HASH", None),
-                "weights_revision": getattr(ext_cls, "WEIGHTS_REVISION", None),
-            },
-        }
-    )
+    content: dict[str, Any] = {
+        "kind": "packets",
+        "dataset": config.dataset,
+        "dataset_version": dataset_cls.VERSION,
+        "recording_id": recording_id,
+        "source_sha256": source_sha256,
+        "preprocessing": _step_entries(config),
+        "fitted_hash": sha256_hex(list(fitted)),
+        "extractor": {
+            "name": spec.name,
+            "params": registry.affecting_params(ext_cls.Params(**spec.params)),
+            "version": ext_cls.VERSION,
+            "vendor_hash": getattr(ext_cls, "VENDOR_HASH", None),
+            "weights_revision": getattr(ext_cls, "WEIGHTS_REVISION", None),
+        },
+    }
+    if device != "cpu":
+        content["device"] = device
+    return sha256_hex(content)
 
 
 def _step_entries(config: ExperimentConfig) -> list[dict[str, Any]]:

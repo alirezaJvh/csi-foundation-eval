@@ -60,7 +60,9 @@ from csi_bench.runner.discover import discover
 from csi_bench.runner.intervals import run_intervals
 
 PACKAGES = ("numpy", "scikit-learn", "pandas", "pyarrow", "pydantic", "PyYAML", "torch")
-DEVICE = "cpu"
+DEFAULT_DEVICE = "cpu"
+DEVICES = ("cpu", "mps", "cuda")
+DEVICE_ENV = "CSI_BENCH_DEVICE"
 TORCH_THREADS = 1
 DEFAULT_ROOT = "runs"
 DEFAULT_CACHE_ROOT = ".cache/features"
@@ -82,6 +84,37 @@ def resolve_workers(value: int | str | None = None) -> int:
     if count < 1:
         raise ConfigError(f"{source}: expected a positive integer, got {raw!r}")
     return count
+
+
+def resolve_device(value: str | None = None) -> str:
+    """Runner-owned torch device: `--device`, else `CSI_BENCH_DEVICE`, else `cpu`.
+
+    `mps` needs the macOS wheels (the default `uv sync` on a Mac); `cuda` needs the CUDA
+    wheels, installed on Linux with `uv sync --group cuda --no-group cpu` (then run with
+    `uv run --no-sync`, as a plain `uv run` re-syncs the cpu wheels). The device is
+    runtime-only: it never enters `run_id`, it is recorded in `provenance.json`, and only
+    torch extractors use it. The same config on the same device reproduces its metrics;
+    across devices only `run_id` is guaranteed equal, and per-packet embeddings are cached
+    per device.
+
+    Raises ConfigError for an unknown name or a backend this torch build cannot use.
+    """
+    source, raw = "--device", value
+    if raw is None:
+        source, raw = f"environment variable {DEVICE_ENV}", os.environ.get(DEVICE_ENV)
+    if raw is None or not raw.strip():
+        return DEFAULT_DEVICE
+    device = raw.strip()
+    if device not in DEVICES:
+        raise ConfigError(f"{source}: expected one of {', '.join(DEVICES)}, got {raw!r}")
+    if device == "mps" and not torch.backends.mps.is_available():
+        raise ConfigError(f"{source}: mps is not available (needs Apple silicon and macOS)")
+    if device == "cuda" and not torch.cuda.is_available():
+        raise ConfigError(
+            f"{source}: cuda is not available (needs an NVIDIA GPU and the CUDA torch "
+            "wheels: uv sync --group cuda --no-group cpu)"
+        )
+    return device
 
 
 def _peak_rss_mb() -> tuple[float, float]:
@@ -337,9 +370,12 @@ def _package_versions() -> dict[str, str]:
     return versions
 
 
-def _setup_runtime() -> None:
+def _setup_runtime(device: str = DEFAULT_DEVICE) -> None:
     """Pin device, thread count and determinism flags for the whole run (runner-owned)."""
-    torch.set_default_device(DEVICE)
+    if device == "cuda":
+        # deterministic cuBLAS needs a fixed workspace (torch.use_deterministic_algorithms)
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    torch.set_default_device(device)
     torch.set_num_threads(TORCH_THREADS)
     torch.use_deterministic_algorithms(True)
     torch.backends.cudnn.deterministic = True
@@ -352,9 +388,9 @@ def _seed_everything(seed: int) -> None:
     torch.manual_seed(seed)
 
 
-def runtime_info() -> dict[str, Any]:
+def runtime_info(device: str = DEFAULT_DEVICE) -> dict[str, Any]:
     return {
-        "device": DEVICE,
+        "device": device,
         "torch_threads": torch.get_num_threads(),
         "deterministic": torch.are_deterministic_algorithms_enabled(),
         "torch_version": torch.__version__,
@@ -384,6 +420,26 @@ def _completed_seeds(config: ExperimentConfig, run_id: str, root: str | Path) ->
     return done
 
 
+def recorded_device(run_id: str, root: str | Path) -> str | None:
+    """The device in a run's `provenance.json`; None when it cannot be read."""
+    try:
+        provenance = json.loads(rs.provenance_path(run_id, root).read_text(encoding="utf-8"))
+        device = provenance["device"]
+    except (OSError, ValueError, KeyError, TypeError, DataError):
+        return None
+    return device if isinstance(device, str) else None
+
+
+def _warn_other_device(run_id: str, root: str | Path, device: str) -> None:
+    """A finished run is kept, never rerun, when it was made on another device."""
+    recorded = recorded_device(run_id, root)
+    if recorded is not None and recorded != device:
+        sys.stderr.write(
+            f"warning: {run_id}: finished on {recorded}, not {device}; kept its results "
+            f"(use another --runs directory, or sweep --force, to run it on {device})\n"
+        )
+
+
 def _step_version(name: str) -> int:
     cls: Any = registry.get("preprocess", name)
     return cls.VERSION
@@ -397,6 +453,7 @@ def collect_provenance(
     fitted: Sequence[dict],
     feature_cache: Sequence[dict] = (),
     input_stats: Mapping[str, Mapping[str, Mapping[str, float]]] | None = None,
+    device: str = DEFAULT_DEVICE,
 ) -> dict[str, Any]:
     """Git state, package versions, split hash and duration for `provenance.json` (AD-13).
 
@@ -425,8 +482,8 @@ def collect_provenance(
             }
             for spec, state in zip(config.preprocessing, fitted, strict=True)
         ],
-        "device": DEVICE,
-        "runtime": runtime_info(),
+        "device": device,
+        "runtime": runtime_info(device),
         "feature_cache": list(feature_cache),
         "seeds": list(config.seeds),
         "duration_seconds": duration,
@@ -463,6 +520,7 @@ def _extract(
     bounds: Mapping[str, Mapping[str, tuple[int, int]]] | None = None,
     packet_cache: PacketCache | None = None,
     input_stats: dict[str, dict[str, dict[str, float]]] | None = None,
+    device: str = DEFAULT_DEVICE,
 ) -> FeatureMatrix:
     """Per extractor: load its matrix from the cache or compute it from its windows' slices.
 
@@ -480,7 +538,16 @@ def _extract(
                 raise ConfigError(f"extractor {spec.name} is per_packet but no packet cache is set")
             stats: dict[str, dict[str, float]] = {}
             matrix = _pool_packets(
-                config, spec, windows, by_id, fitted, packet_cache, log, cache_report, stats
+                config,
+                spec,
+                windows,
+                by_id,
+                fitted,
+                packet_cache,
+                log,
+                cache_report,
+                stats,
+                device,
             )
             if input_stats is not None:
                 input_stats[spec.name] = stats
@@ -567,6 +634,7 @@ def _pool_packets(
     log: logging.Logger,
     cache_report: list[dict[str, Any]],
     stats: dict[str, dict[str, float]],
+    device: str = DEFAULT_DEVICE,
 ) -> FeatureMatrix:
     """Embed each windowed recording once (cached, no window length in the key), then pool."""
     assert config.pooler is not None  # config validation requires one for per_packet
@@ -582,7 +650,7 @@ def _pool_packets(
     began = time.monotonic()
     for recording_id, indices in groups.items():
         rec = by_id[recording_id]
-        key = packet_cache_key(config, spec, fitted, recording_id, rec.meta.source_sha256)
+        key = packet_cache_key(config, spec, fitted, recording_id, rec.meta.source_sha256, device)
         packets = cache.get(key)
         hit = packets is not None
         if packets is None:
@@ -762,10 +830,12 @@ def _execute(
     cache_root: str | Path = DEFAULT_CACHE_ROOT,
     force: bool = False,
     workers: int = 1,
+    device: str = DEFAULT_DEVICE,
 ) -> None:
     previous = {} if force else _completed_seeds(config, run_id, root)
     todo = [seed for seed in config.seeds if seed not in previous]
     if not todo:
+        _warn_other_device(run_id, root, device)
         return
     try:
         directory: Path | None = rs.run_dir(run_id, root)
@@ -798,7 +868,8 @@ def _execute(
         log.info("config loaded from %s; run_id=%s", config_path, run_id)
 
         _write_status(run_id, root, "running", started_at=started_at)
-        _setup_runtime()
+        _setup_runtime(device)
+        log.info("device=%s", device)
         dataset_cls: Any = registry.get("dataset", config.dataset)
         source = dataset_cls(dataset_cls.Params())
         stage = time.monotonic()
@@ -852,6 +923,7 @@ def _execute(
             plan.blocks,
             NpzPacketCache(Path(cache_root) / "packets"),
             input_stats,
+            device,
         )
         log.info("stage extract: %.2fs", time.monotonic() - stage)
 
@@ -912,6 +984,7 @@ def _execute(
                 fitted,
                 cache_report,
                 input_stats,
+                device,
             ),
         )
         _write_status(
@@ -951,10 +1024,12 @@ def run(
     root: str | Path = DEFAULT_ROOT,
     cache_root: str | Path = DEFAULT_CACHE_ROOT,
     workers: int | str | None = None,
+    device: str | None = None,
 ) -> int:
     """Validate, execute and store one experiment; return the CLI exit code."""
     try:
         count = resolve_workers(workers)
+        chosen = resolve_device(device)
     except ConfigError as e:
         sys.stderr.write(f"error: {e}\n")
         return 2
@@ -970,7 +1045,7 @@ def run(
         sys.stderr.write(f"error: {e}\n")
         return 2
     try:
-        _execute(config, config_path, run_id, root, cache_root, workers=count)
+        _execute(config, config_path, run_id, root, cache_root, workers=count, device=chosen)
     except Exception as e:  # noqa: BLE001 - the run boundary maps every error to exit 2
         sys.stderr.write(f"error: {e}\n")
         return 2
@@ -999,6 +1074,7 @@ def run_sweep(
     root: str | Path = DEFAULT_ROOT,
     cache_root: str | Path = DEFAULT_CACHE_ROOT,
     workers: int | str | None = None,
+    device: str | None = None,
 ) -> int:
     """Expand a sweep file, validate every config, then run them one at a time.
 
@@ -1006,6 +1082,7 @@ def run_sweep(
     """
     try:
         count = resolve_workers(workers)
+        chosen = resolve_device(device)
     except ConfigError as e:
         sys.stderr.write(f"error: {e}\n")
         return 2
@@ -1035,6 +1112,7 @@ def run_sweep(
             failed.append(run_id)
             continue
         if action == "skip":
+            _warn_other_device(run_id, root, chosen)
             skipped += 1
             sys.stdout.write(f"{run_id} skipped\n")
             continue
@@ -1047,6 +1125,7 @@ def run_sweep(
                 cache_root,
                 force=action == "rerun" or force,
                 workers=count,
+                device=chosen,
             )
         except Exception as e:  # noqa: BLE001 - one failed run must not stop the sweep
             sys.stderr.write(f"error: {run_id}: {e}\n")

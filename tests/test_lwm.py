@@ -1,6 +1,7 @@
 """Frozen LWM v1.1 per-packet extractor (Story 5.1)."""
 
 import ast
+import copy
 import hashlib
 import logging
 import shutil
@@ -213,6 +214,97 @@ def test_tokens_and_pooling_follow_the_upstream_layout(make, model):
         rtol=0,
         atol=1e-6,
     )
+
+
+# Embeddings of `_csi(2, 3)` from the adapter before Story 6.5 (first 4 dims of each
+# packet, then each packet's sum): following the default device must not change CPU output.
+CPU_REFERENCE = {
+    "cls": (
+        [-0.04207, 0.083757, -0.063499, 0.182093, -0.04263, 0.084972]
+        + [-0.064099, 0.179739, -0.041663, 0.083319, -0.066034, 0.182487],
+        [0.30642, 0.29891, 0.3086],
+    ),
+    "channel_mean": (
+        [-0.004747, 0.009384, -0.121853, 0.029475, -0.000229, 0.010544]
+        + [-0.13491, 0.008725, 0.000355, 0.008722, -0.122187, 0.041438],
+        [0.86212, 0.85767, 0.87347],
+    ),
+}
+
+
+@pytest.mark.parametrize("embedding", ["cls", "channel_mean"])
+def test_cpu_output_is_unchanged(make, embedding):
+    values = make(embedding=embedding).extract_packets(_csi(2, 3)).values
+    head, sums = CPU_REFERENCE[embedding]
+    np.testing.assert_allclose(values[:, :4].ravel(), head, rtol=0, atol=2e-5)
+    np.testing.assert_allclose(values.sum(axis=1), sums, rtol=0, atol=2e-4)
+
+
+def _accelerators() -> list[str]:
+    found = []
+    if torch.backends.mps.is_available():
+        found.append("mps")
+    if torch.cuda.is_available():
+        found.append("cuda")
+    return found
+
+
+@pytest.mark.parametrize(
+    "device",
+    _accelerators()
+    or [pytest.param("gpu", marks=pytest.mark.skip(reason="no mps or cuda device"))],
+)
+def test_gpu_matches_cpu(monkeypatch, device):
+    """Under the runner's determinism flags, as `_setup_runtime` sets them."""
+    monkeypatch.chdir(ROOT)
+    if device == "cuda":
+        monkeypatch.setenv("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    csi = _csi(4, 32)
+    cpu = LWM().extract_packets(csi).values
+    previous = torch.get_default_device()
+    deterministic = torch.are_deterministic_algorithms_enabled()
+    torch.set_default_device(device)
+    torch.use_deterministic_algorithms(True)
+    try:
+        extractor = LWM()
+        gpu = extractor.extract_packets(csi).values
+        assert extractor._model is not None
+        assert next(extractor._model.parameters()).device.type == device
+    finally:
+        torch.use_deterministic_algorithms(deterministic)
+        torch.set_default_device(previous)
+    assert gpu.dtype == np.float32
+    np.testing.assert_allclose(gpu, cpu, rtol=0, atol=1e-4)
+
+
+def test_model_follows_the_default_device(make, model, monkeypatch):
+    """The adapter moves its model to `torch.get_default_device()` and returns CPU numpy."""
+    seen = []
+    original = torch.nn.Module.to
+
+    def spy(self, *args, **kwargs):
+        seen.append(args[0] if args else kwargs.get("device"))
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(torch.nn.Module, "to", spy)
+    extractor = make()
+    values = extractor.extract_packets(_csi(2, 2)).values
+    assert isinstance(values, np.ndarray) and values.dtype == np.float32
+    assert extractor._model is model  # already on the cpu default device: not moved
+    assert seen == []
+
+
+def test_model_moves_to_a_non_cpu_default_device(model, monkeypatch):
+    """Without a GPU: `meta` stands in for mps/cuda, on copies of the shared model."""
+    meta = torch.device("meta")
+    monkeypatch.setattr(torch, "get_default_device", lambda: meta)
+    monkeypatch.setattr(lwm_adapter, "load_model", lambda: copy.deepcopy(model))
+    fresh = LWM()
+    assert next(fresh._get_model().parameters()).device == meta  # loaded, then moved
+    cached = LWM()
+    cached._model = copy.deepcopy(model)
+    assert next(cached._get_model().parameters()).device == meta  # moved when the device changes
+    assert next(model.parameters()).device.type == "cpu"
 
 
 # --- frozen, no global state ---------------------------------------------------------------
