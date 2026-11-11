@@ -2,7 +2,7 @@
 title: 'Padova long-window plan and classical baseline'
 type: 'feature'
 created: '2026-11-10'
-status: 'in-progress'
+status: 'done'
 route: 'oneshot'
 review_loop_iteration: 0
 context:
@@ -29,3 +29,4 @@ context:
 - **No code change** outside `splits/`, `experiments/`, `tests/`. Existing runs untouched; the CSI-Bench sweep must expand to existing run ids (nothing to rerun).
 - **Run:** `uv run csi-bench sweep experiments/padova_long_windows.yaml`, then `uv run csi-bench report`; check sections `padova / time_block, gap_packets 865` and `csi_bench_hp / time_block, gap_packets 610`.
 - **Status (2026-11-11):** plans, YAMLs and tests done; full `pytest` 668 passed, 1 skipped. The Padova sweep (`--workers 8`) was stopped by host memory pressure (11 GB) after 18/216 runs; rerun with `--workers 2`–`3` (resumes), then `report`. Story stays `in-progress` until then. Code review skipped at the user's request; nothing committed.
+- **Closed (2026-11-11, Mac):** merged `origin/main` into the Mac branch holding `05237c4` (`56798ca`; conflicts resolved to origin's YAML and tests, both 6.4 change-log lines kept; `pytest` 664 passed, 8 skipped). Padova sweep 216/216 `done`, 0 dirty, commit `56798ca`, cpu, 20:20–20:39 UTC (18 min of run time). `report` exits 0 with `padova / time_block, gap_packets 865` and `csi_bench_hp / time_block, gap_packets 610` (576 adopted runs). Best by val per room (test F1): bedroom 75.60, laboratory 79.53, living_room 77.23, all w865. Write-up: `_bmad-output/reports/padova-long-windows-6-6.md`, section text `padova-long-windows-6-6.txt`.
