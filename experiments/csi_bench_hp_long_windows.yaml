@@ -1,0 +1,49 @@
+# CSI-Bench HP long-window classical baseline: csi_bench_hp_classical_baseline.yaml at about
+# 1, 2, 3 and 5 s windows. These 576 runs were made on the Mac at commit 05237c4, which never
+# reached origin; Story 6.6 rebuilt this file and plan d6b97e4f25b3 from the runs' config.yaml
+# files, and the expansion test pins the run ids to those runs.
+# 4 windows x 3 feature sets x 2 selection x 3 heads x 8 room sets = 576 runs.
+# Windows: 122, 244, 366, 610 packets = 1, 2, 3, 5 s at about 122 Hz.
+# Stride rule: stride = window/2 (61, 122, 183, 305). Stride is not tuned.
+# Plan d6b97e4f25b3: time_block, fractions 0.6/0.2/0.2, gap_packets 610, so the gap is never
+# shorter than the window. The runs appear in their own report section
+# `csi_bench_hp / time_block, gap_packets 610`.
+# `csi_bench_hp` has two block plans, so it has no implicit split: every command must name one
+# (`split:` here, `--split` on the CLI, e.g. `describe csi_bench_hp --split d6b97e4f25b3`).
+# Rooms are the CSI-Bench environments E01-E06 and E27: each room alone, then all seven pooled.
+# Preprocessing is ant2 for every cell (the adapter keeps tx0's 2 receive chains).
+# mrmr k stays <= 3, the smallest feature-set width (amplitude_stats).
+dataset: csi_bench_hp
+split: "d6b97e4f25b3"  # time_block, fractions 0.6/0.2/0.2, gap 610
+selection: {rooms: [E01]}
+preprocessing: [ant2]
+window_len: 122
+stride: 61
+extractors: [{name: amplitude_stats}]
+feature_selection: null
+head: {name: svm}
+seeds: [0]
+role: comparison
+sweep:
+  "@window":
+    - {window_len: 122, stride: 61}
+    - {window_len: 244, stride: 122}
+    - {window_len: 366, stride: 183}
+    - {window_len: 610, stride: 305}
+  extractors:
+    - [{name: amplitude_stats}]
+    - [{name: paper_beamforming}]
+    - [{name: amplitude_stats}, {name: paper_beamforming}]
+  feature_selection:
+    - null
+    - {mrmr: {k: [2, 3]}}
+  head.name: [svm, knn, random_forest]
+  selection.rooms:
+    - [E01]
+    - [E02]
+    - [E03]
+    - [E04]
+    - [E05]
+    - [E06]
+    - [E27]
+    - [E01, E02, E03, E04, E05, E06, E27]

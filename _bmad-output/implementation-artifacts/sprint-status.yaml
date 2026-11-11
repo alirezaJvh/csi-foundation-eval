@@ -85,8 +85,8 @@ development_status:
   6-3-padova-sharp-comparable-run: done
   6-4-csi-bench-loader: done
   6-5-device-option-and-parallel-safe-dataset-cache: done
-  6-6-padova-long-window-plan-and-classical-baseline: backlog
-  6-7-lwm-on-padova-and-csi-bench: backlog
+  6-6-padova-long-window-plan-and-classical-baseline: in-progress
+  6-7-lwm-on-padova-and-csi-bench: in-progress
   epic-6-retrospective: optional
 
   epic-7: backlog

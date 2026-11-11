@@ -1,0 +1,40 @@
+# Frozen LWM on Padova, long windows (Story 6.7): the reduced lwm.yaml grid on the cells of
+# padova_long_windows.yaml (Story 6.6 plan 5cfd50d7d8ae, time_block, gap 865).
+# 3 heads x 2 antenna sets x 2 LWM presets x 4 windows x 3 room sets = 144 runs.
+# Grid kept from the median LWM test macro-F1 on tor_vergata (lwm.yaml, 4500 runs,
+# sprint-change-proposal-2026-11-10):
+#   presets lwm_rescale_phase (time_block 0.990, room_holdout 0.245) and lwm_amplitude
+#     (0.989, 0.25): the two best rescale presets under both protocols.
+#   embedding cls (0.972 / 0.201) over channel_mean (0.972 / 0.189).
+#   pooler mean_std (0.985 / 0.216) over mean (0.965 / 0.182).
+#   heads svm (0.985 on time_block), mlp (0.231, best on room_holdout), logreg (0.976, cheapest).
+#   windows 173, 346, 519, 865 packets = 1, 2, 3, 5 s at 173 Hz: the windows of
+#     padova_long_windows.yaml (time_block medians rose with window, w1 0.957 ... w50 0.980).
+#   antennas ant2 and ant4: Padova has 4 receive antennas; LWM takes 1-4.
+# Stride rule: stride = window/2, rounded down (86, 173, 259, 432), as padova_long_windows.yaml.
+# Stride is not tuned. At gap 865 the gap is never shorter than the window.
+# The runs appear in the report section `padova / time_block, gap_packets 865`.
+# head.name is the outermost axis, so the cheap heads (logreg, mlp) cover every cell first.
+# The antenna preset comes first, then the LWM preset.
+dataset: padova
+split: "5cfd50d7d8ae"  # time_block, fractions 0.6/0.2/0.2, gap 865
+selection: {rooms: [bedroom]}
+preprocessing: [ant2, lwm_rescale_phase]
+window_len: 173
+stride: 86
+extractors: [{name: lwm, params: {embedding: cls}}]
+pooler: mean_std
+feature_selection: null
+head: {name: logreg}
+seeds: [0]
+role: comparison
+sweep:
+  head.name: [logreg, mlp, svm]
+  preprocessing.0: [ant2, ant4]
+  preprocessing.1: [lwm_rescale_phase, lwm_amplitude]
+  "@window":
+    - {window_len: 173, stride: 86}
+    - {window_len: 346, stride: 173}
+    - {window_len: 519, stride: 259}
+    - {window_len: 865, stride: 432}
+  selection.rooms: [[bedroom], [living_room], [laboratory]]

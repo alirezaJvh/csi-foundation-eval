@@ -1,3 +1,4 @@
+import hashlib
 from collections import Counter
 from pathlib import Path
 
@@ -449,7 +450,8 @@ def test_csi_bench_hp_sweep_expands(monkeypatch):
     plan = find_split("csi_bench_hp", split)
     assert plan.is_file() and read_plan_splitter(plan) == "time_block"
     assert read_plan_params(plan) == {"fractions": [0.6, 0.2, 0.2], "gap_packets": 64}
-    assert find_split("csi_bench_hp").stem == split
+    with pytest.raises(DataError, match=f"{split}, d6b97e4f25b3"):
+        find_split("csi_bench_hp")  # two block plans (gap 64, gap 610): no implicit split
     for c in configs:
         assert (c.dataset, c.split, c.stride) == ("csi_bench_hp", split, 6)
         assert (c.role, c.seeds) == ("comparison", [0])
@@ -486,7 +488,57 @@ def test_padova_cross_room_sweep_expands(monkeypatch):
             assert column == f"bedroom→{test_room}"
         with pytest.raises(ConfigError, match="must equal"):
             check_split_rooms("room_holdout", params, ["bedroom"], "comparison")
-    assert find_split("padova").stem == "b6010d87ce4d"  # an implicit split stays the block plan
+    with pytest.raises(DataError, match="5cfd50d7d8ae, b6010d87ce4d"):
+        find_split("padova")  # room_holdout plans never count, but two block plans do
+
+
+def _long_window_sweep(name: str, baseline: str, split: str, gap: int) -> list:
+    """Expand a long-window sweep and check what the two long-window files share."""
+    raw = yaml.safe_load((ROOT / f"experiments/{name}.yaml").read_text())
+    short = yaml.safe_load((ROOT / f"experiments/{baseline}.yaml").read_text())
+    assert {k: v for k, v in raw["sweep"].items() if k != "@window"} == {
+        k: v for k, v in short["sweep"].items() if k != "window_len"
+    }
+    plan = find_split(raw["dataset"], split)
+    assert read_plan_splitter(plan) == "time_block"
+    assert read_plan_params(plan) == {"fractions": [0.6, 0.2, 0.2], "gap_packets": gap}
+    configs = [c for _, c in expand_sweep(raw, name)]
+    assert len({compute_run_id(c) for c in configs}) == len(configs)
+    for c in configs:
+        assert (c.dataset, c.split, c.stride) == (raw["dataset"], split, c.window_len // 2)
+        assert c.window_len <= gap  # the gap is never shorter than the window
+        assert (c.role, c.seeds, c.pooler) == ("comparison", [0], None)
+        assert [(s.name, s.params) for s in c.preprocessing] == [("antennas", {"ids": [0, 1]})]
+    return configs
+
+
+def test_padova_long_windows_sweep_expands(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    configs = _long_window_sweep(
+        "padova_long_windows", "padova_classical_baseline", "5cfd50d7d8ae", 865
+    )
+    assert len(configs) == 216
+    assert Counter(c.window_len for c in configs) == {173: 54, 346: 54, 519: 54, 865: 54}
+    assert Counter(tuple(c.selection.rooms) for c in configs) == {
+        ("bedroom",): 72,
+        ("living_room",): 72,
+        ("laboratory",): 72,
+    }
+
+
+def test_csi_bench_hp_long_windows_sweep_expands(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    configs = _long_window_sweep(
+        "csi_bench_hp_long_windows", "csi_bench_hp_classical_baseline", "d6b97e4f25b3", 610
+    )
+    assert Counter(c.window_len for c in configs) == {122: 144, 244: 144, 366: 144, 610: 144}
+    # Pins the run ids to the 576 runs made on the Mac at commit 05237c4, which this file and
+    # plan d6b97e4f25b3 were rebuilt from: sha256 of the sorted run ids, newline-joined.
+    ids = "\n".join(sorted(compute_run_id(c) for c in configs))
+    digest = hashlib.sha256(ids.encode()).hexdigest()
+    assert digest == "ff83cfc37101804750f955d5b6165523a7f133e30daa848f82594d2bddc9a7fc"
 
 
 def test_padova_sharp_sweep_expands(monkeypatch):
@@ -558,3 +610,93 @@ def test_lwm_sweep_expands(monkeypatch):
     }
     assert {c.extractors[0].params["embedding"] for c in configs} == {"cls", "channel_mean"}
     assert all(c.feature_selection is None and c.role == "comparison" for c in configs)
+
+
+def _cells(configs) -> set:
+    """The (dataset, split, window_len, stride, rooms) cells a sweep covers."""
+    return {(c.dataset, c.split, c.window_len, c.stride, tuple(c.selection.rooms)) for c in configs}
+
+
+def _expand_file(name: str) -> list:
+    raw = yaml.safe_load((ROOT / f"experiments/{name}.yaml").read_text())
+    return [c for _, c in expand_sweep(raw, name)]
+
+
+def _lwm_reduced_sweep(name: str, n_runs: int, antennas: list) -> list:
+    """Expand a Story 6.7 LWM sweep and check the shared reduced grid."""
+    configs = _expand_file(name)
+    assert len({compute_run_id(c) for c in configs}) == len(configs) == n_runs
+    # cheap heads first: all logreg runs, then mlp, then svm
+    third = n_runs // 3
+    heads = [c.head.name for c in configs]
+    assert heads == ["logreg"] * third + ["mlp"] * third + ["svm"] * third
+    assert {
+        tuple((s.name, tuple(s.params.get("ids", ()))) for s in c.preprocessing) for c in configs
+    } == {
+        (("antennas", tuple(ids)), ("global_rescale", ()), (last, ()))
+        for ids in antennas
+        for last in ("phase_sanitize", "amplitude_only")
+    }
+    for c in configs:
+        assert [(e.name, e.params) for e in c.extractors] == [("lwm", {"embedding": "cls"})]
+        assert c.pooler is not None and c.pooler.name == "mean_std"
+        assert (c.feature_selection, c.role, c.seeds) == (None, "comparison", [0])
+    return configs
+
+
+def test_padova_lwm_sweep_expands(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    configs = _lwm_reduced_sweep("padova_lwm", 180, [[0, 1], [0, 1, 2, 3]])
+    assert Counter(c.split for c in configs) == {
+        "b6010d87ce4d": 108,
+        "725a12be6b83": 36,
+        "99d235eb2f0e": 36,
+    }
+    assert {c.window_len for c in configs} == {10, 30, 50}
+    classical = _cells(_expand_file("padova_classical_baseline"))
+    classical |= _cells(_expand_file("padova_cross_room"))
+    # w30 and w50 are classical cells; w10 is LWM-only (classical starts at 20) but keeps the
+    # same dataset, plan, stride and room column
+    shared = {cell for cell in classical if cell[2] in (30, 50)}
+    w10 = {(d, s, 10, st, r) for d, s, w, st, r in shared if w == 30}
+    assert _cells(configs) == shared | w10
+    for c in configs:
+        params = read_plan_params(find_split("padova", c.split))
+        if "test_rooms" in params:
+            check_split_rooms("room_holdout", params, c.selection.rooms, c.role)
+            assert c.window_len < params["gap_packets"]
+
+
+def test_padova_lwm_long_sweep_expands(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    configs = _lwm_reduced_sweep("padova_lwm_long", 144, [[0, 1], [0, 1, 2, 3]])
+    assert Counter(c.window_len for c in configs) == {173: 36, 346: 36, 519: 36, 865: 36}
+    assert _cells(configs) == _cells(_expand_file("padova_long_windows"))
+
+
+def test_padova_sharp_lwm_sweep_expands(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    configs = _lwm_reduced_sweep("padova_sharp_lwm", 24, [[0, 1], [0, 1, 2, 3]])
+    gap346 = "7640fb8ad320"
+    classical = {cell for cell in _cells(_expand_file("padova_sharp")) if cell[1] == gap346}
+    assert _cells(configs) == classical
+    assert {c.window_len for c in configs} == {50, 346}
+
+
+def test_csi_bench_hp_lwm_sweep_expands(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    configs = _lwm_reduced_sweep("csi_bench_hp_lwm", 192, [[0, 1]])  # 2 receive chains: no ant4
+    assert Counter(c.window_len for c in configs) == {122: 48, 244: 48, 366: 48, 610: 48}
+    assert _cells(configs) == _cells(_expand_file("csi_bench_hp_long_windows"))
+
+
+def test_story_6_7_lwm_sweeps_are_540_distinct_runs(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    names = ("padova_lwm", "padova_lwm_long", "padova_sharp_lwm", "csi_bench_hp_lwm")
+    ids = [compute_run_id(c) for name in names for c in _expand_file(name)]
+    assert len(set(ids)) == len(ids) == 540
