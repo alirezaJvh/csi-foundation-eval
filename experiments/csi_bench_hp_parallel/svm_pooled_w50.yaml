@@ -1,0 +1,26 @@
+# Part of csi_bench_hp_classical_baseline.yaml for running several sweeps at once (svm_pooled_w50).
+# The eight files in this folder together expand to exactly the same 576 run ids as that file;
+# edit the grid there and regenerate these, never one alone.
+dataset: csi_bench_hp
+split: "a17121b9b216"  # time_block, fractions 0.6/0.2/0.2, gap 64
+selection: {rooms: [E01]}
+preprocessing: [ant2]
+window_len: 40
+stride: 6
+extractors: [{name: amplitude_stats}]
+feature_selection: null
+head: {name: svm}
+seeds: [0]
+role: comparison
+sweep:
+  window_len: [50]
+  extractors:
+    - [{name: amplitude_stats}]
+    - [{name: paper_beamforming}]
+    - [{name: amplitude_stats}, {name: paper_beamforming}]
+  feature_selection:
+    - null
+    - {mrmr: {k: [2, 3]}}
+  head.name: [svm]
+  selection.rooms:
+    - [E01, E02, E03, E04, E05, E06, E27]

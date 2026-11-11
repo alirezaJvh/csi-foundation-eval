@@ -700,3 +700,18 @@ def test_story_6_7_lwm_sweeps_are_540_distinct_runs(monkeypatch):
     names = ("padova_lwm", "padova_lwm_long", "padova_sharp_lwm", "csi_bench_hp_lwm")
     ids = [compute_run_id(c) for name in names for c in _expand_file(name)]
     assert len(set(ids)) == len(ids) == 540
+
+
+def test_csi_bench_hp_parallel_parts_match_the_sweep(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    discover()
+    full = yaml.safe_load((ROOT / "experiments/csi_bench_hp_classical_baseline.yaml").read_text())
+    expected = {compute_run_id(c) for _, c in expand_sweep(full, "csi_bench_hp_classical_baseline")}
+    parts = sorted((ROOT / "experiments/csi_bench_hp_parallel").glob("*.yaml"))
+    assert len(parts) == 8
+    ids: list[str] = []
+    for path in parts:
+        raw = yaml.safe_load(path.read_text())
+        ids += [compute_run_id(c) for _, c in expand_sweep(raw, path.stem)]
+    assert len(ids) == len(set(ids)) == 576
+    assert set(ids) == expected
