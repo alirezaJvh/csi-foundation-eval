@@ -4,7 +4,7 @@
 
 ## Goal
 
-Let the researcher rerun the whole study (classical baselines, LWM and later the other pretrained models, under within-room and cross-room protocols, with confidence intervals) on the public activity-recognition datasets the supervisor verified on 2026-10-08: Padova 80 MHz first, then CSI-Bench. Each dataset is added by writing only a new `DatasetSource` loader, its committed split and experiment configs, with no change to the evaluation code. This proves the harness is extensible and tests whether the findings hold on independent data. Padova comes first because it uses the same hardware family as the own `tor_vergata` data, so it is likely the easiest import, and its several environments probably give a second cross-environment generalisation test. The exact formats of both datasets are not yet verified, so each story starts by confirming them.
+Let the researcher rerun the whole study (classical baselines, LWM and later the other pretrained models, under within-room and cross-room protocols, with confidence intervals) on the public activity-recognition datasets the supervisor verified on 2026-10-08: Padova 80 MHz first, then CSI-Bench. Each dataset is added by writing only a new `DatasetSource` loader, its committed split and experiment configs, with no change to the evaluation code. This proves the harness is extensible and tests whether the findings hold on independent data. Padova comes first because it uses the same hardware family as the own `tor_vergata` data, so it is likely the easiest import, and its several environments probably give a second cross-environment generalisation test. The exact formats of both datasets are not yet verified, so each story starts by confirming them. After the loaders, long-window runs (1, 2, 3, 5 s) and frozen LWM cover both public datasets, with a runner device option so LWM embedding can use a GPU (MPS or CUDA).
 
 ## Stories
 
@@ -12,6 +12,9 @@ Let the researcher rerun the whole study (classical baselines, LWM and later the
 - Story 6.2: Padova cross-room baseline
 - Story 6.3: Padova SHARP-comparable run
 - Story 6.4: CSI-Bench loader
+- Story 6.5: Device option and parallel-safe dataset cache
+- Story 6.6: Padova long-window plan and classical baseline
+- Story 6.7: LWM on Padova and CSI-Bench
 
 ## Requirements & Constraints
 
@@ -33,6 +36,9 @@ Let the researcher rerun the whole study (classical baselines, LWM and later the
 - **Splits.** `time_block` assigns contiguous packet blocks per recording to train/val/test, separated by `gap_packets` (initially 64). Plans are committed at `splits/<dataset>/<split_hash>.json` with each input's `source_sha256`. The splitter raises `DataError` if any class has no val or test windows, so short or single-recording classes need checking. `room_holdout` needs explicit `train_rooms`/`test_rooms`, one committed plan per direction, and validation only from train rooms.
 - **Selections.** Room settings are `selection: {rooms: [...]}` filters applied after splitting. With `room_holdout`, `selection.rooms` must equal `train_rooms ∪ test_rooms`.
 - **Report.** One section per `(dataset, splitter)`. `time_block` sections have room columns and `room_holdout` sections have direction columns. A column must come from a single `split_hash`. `describe <dataset>` writes counts to `runs/_dataset/<dataset>.parquet`, which serves as the rate-confound guard.
+- **Device (AD-12 amendment).** The runner sets the device (default `cpu`; `--device` or `CSI_BENCH_DEVICE` selects `mps`/`cuda`), torch thread count and determinism flags, and records them in provenance; adapters never set them. Device is `affects_result=False` (never changes `run_id`). Same config + same device reproduces metrics; across devices only `run_id` is guaranteed equal. Per-packet embedding caches include the device in their key. Only torch extractors use the device; sklearn heads, poolers and classical extractors stay on CPU.
+- **Torch wheels.** CPU index by default via `tool.uv.sources`; macOS wheels include MPS; an optional `cuda` uv extra selects the CUDA index on Linux (exact uv mechanism decided in Story 6.5).
+- **Dataset caches must be parallel-safe.** Several sweep processes may load the same dataset at once; parallel CSI-Bench sweeps hit `cache file unreadable`. The cause must be reproduced by a test before fixing.
 - **Extractor compatibility.** Extractors declare `requires: {phase, n_antennas}`, which the runner checks at config validation. `paper_beamforming` and the 2-antenna variants assume antennas `[0, 1]`.
 - **Known gaps to check on new data:**
   - LWM declares `n_antennas: "any"` but fails at extraction for more than 4 antennas. A dataset with more antennas passes validation and then fails.
@@ -40,6 +46,7 @@ Let the researcher rerun the whole study (classical baselines, LWM and later the
 
 ## Cross-Story Dependencies
 
-- Both stories depend on Epics 1, 2 and 4: the `DatasetSource` contract test, `describe`, `time_block` and `room_holdout` splitters, the classical sweep, per-`(dataset, splitter)` report sections and bootstrap intervals. Epic 5 LWM configs are reused with only a `dataset:` change.
+- All stories depend on Epics 1, 2 and 4: the `DatasetSource` contract test, `describe`, `time_block` and `room_holdout` splitters, the classical sweep, per-`(dataset, splitter)` report sections and bootstrap intervals. Epic 5 LWM configs are reused with only a `dataset:` change.
 - 6.4 (CSI-Bench) follows 6.1 but has no code dependency on it.
+- Order: 6.5 → 6.6 → 6.7 → Epic 7. 6.7's embedding cost depends on 6.5 (device, cache fix); 6.6 commits the long-window plans 6.7 uses. CSI-Bench HP has 2 receive chains, so `ant4` is invalid there.
 - Downstream: Story 7.4 runs the full comparison under `time_block` on every verified public dataset, so Epic 6 comes before Epic 7.

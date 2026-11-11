@@ -1,0 +1,43 @@
+# Padova long-window classical baseline (Story 6.6): padova_classical_baseline.yaml at about
+# 1, 2, 3 and 5 s windows, so Padova matches the CSI-Bench long-window runs
+# (csi_bench_hp_long_windows.yaml) and the Story 6.7 LWM long-window rows have a classical
+# comparison.
+# 4 windows x 3 feature sets x 2 selection x 3 heads x 3 room sets = 216 runs.
+# Windows: 173, 346, 519, 865 packets = 1, 2, 3, 5 s at 173 Hz.
+# Stride rule: stride = window/2, rounded down (86, 173, 259, 432), the rule of the CSI-Bench
+# long-window runs. Stride is not tuned.
+# Plan 5cfd50d7d8ae: time_block, fractions 0.6/0.2/0.2, gap_packets 865, so the gap is never
+# shorter than the window (the reason for gap 346 in padova_sharp.yaml). At gap 865 every
+# (room, class, part) still holds at least 3 windows of 865 packets (laboratory val/test lowest).
+# The runs appear in their own report section `padova / time_block, gap_packets 865`.
+# `padova` now has two block plans, so it has no implicit split: every command must name one
+# (`split:` here, `--split` on the CLI, e.g. `describe padova --split 5cfd50d7d8ae`).
+# Rooms are the physical places, one room per cell: bedroom (S1-S5), living_room (S6),
+# laboratory (S7). Preprocessing is ant2 for every cell (paper_beamforming requires exactly 2
+# antennas). mrmr k stays <= 3, the smallest feature-set width (amplitude_stats).
+dataset: padova
+split: "5cfd50d7d8ae"  # time_block, fractions 0.6/0.2/0.2, gap 865
+selection: {rooms: [bedroom]}
+preprocessing: [ant2]
+window_len: 173
+stride: 86
+extractors: [{name: amplitude_stats}]
+feature_selection: null
+head: {name: svm}
+seeds: [0]
+role: comparison
+sweep:
+  "@window":
+    - {window_len: 173, stride: 86}
+    - {window_len: 346, stride: 173}
+    - {window_len: 519, stride: 259}
+    - {window_len: 865, stride: 432}
+  extractors:
+    - [{name: amplitude_stats}]
+    - [{name: paper_beamforming}]
+    - [{name: amplitude_stats}, {name: paper_beamforming}]
+  feature_selection:
+    - null
+    - {mrmr: {k: [2, 3]}}
+  head.name: [svm, knn, random_forest]
+  selection.rooms: [[bedroom], [living_room], [laboratory]]

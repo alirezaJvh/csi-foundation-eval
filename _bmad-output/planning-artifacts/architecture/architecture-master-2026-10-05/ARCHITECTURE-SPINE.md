@@ -234,7 +234,11 @@ flowchart TB
 - **Rule:**
   - `config.seeds` drives training randomness only. A run executes once per seed, writes to `runs/<run_id>/seeds/<seed>/`, and records mean ± std.
   - If a requested seed is missing from a `done` run, only that seed is executed.
-  - The runner sets `device = "cpu"`, the torch thread count and the determinism flags, and records them. Adapters never set them.
+  - The runner sets the device, the torch thread count and the determinism flags, and records them in provenance. Adapters never set them.
+  - Device is `cpu` by default; `--device` or `CSI_BENCH_DEVICE` selects `mps` or `cuda`. It is `affects_result=False`: it never changes `run_id`.
+  - Reproducibility: the same config on the same device reproduces the same metrics. Across devices only `run_id` is guaranteed equal; metrics may differ by floating-point noise, and provenance shows which device produced them.
+  - Per-packet embedding caches include the device in their key, so CPU and GPU embeddings are never mixed in one run.
+  - Only torch extractors use the device. Sklearn heads, poolers and classical extractors always run on CPU. (Amended by sprint-change-proposal-2026-11-10.)
   - Vendored code must not touch global RNGs. LWM's `make_sample` is never called.
 
 ### AD-13 — Results store, provenance and report
@@ -344,7 +348,7 @@ flowchart TB
 | --- | --- |
 | Python | 3.12 |
 | uv | 0.12.23 |
-| torch / torchvision (CPU index via `tool.uv.sources`) | 2.14.1+cpu / 0.29.1+cpu |
+| torch / torchvision (CPU index by default via `tool.uv.sources`; macOS wheels include MPS; an optional `cuda` uv extra selects the CUDA index on Linux, mechanism decided in Story 6.5) | 2.14.1 / 0.29.1 |
 | numpy | 2.5.3 |
 | scikit-learn | 1.9.1 |
 | pandas (uv `override-dependencies`, because mantis-tsfm caps it at <3 but never imports it) | 3.0.6 |

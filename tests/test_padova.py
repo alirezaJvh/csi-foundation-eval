@@ -60,6 +60,9 @@ def test_real_dataset():
     committed = COMMITTED / f"{plan.split_hash}.json"
     assert committed.is_file(), f"generate with write_split_plan: {committed}"
     assert load_split_plan(committed, recs) == plan
+    long = TimeBlock(TimeBlock.Params(gap_packets=865)).split(recs, "padova")
+    assert long.split_hash == "5cfd50d7d8ae"  # padova_long_windows.yaml
+    assert load_split_plan(COMMITTED / "5cfd50d7d8ae.json", recs) == long
 
 
 @pytest.mark.skipif(not (REAL / "S1a").is_dir(), reason="dataset not present")
@@ -207,7 +210,7 @@ def test_cache_hit_and_invalidation(tmp_path, monkeypatch):
     monkeypatch.setattr(padova, "loadmat", boom)
     monkeypatch.setattr(Path, "read_bytes", boom)  # an unchanged file is not even hashed
     second = _load(tmp_path)[0]
-    assert isinstance(second.csi, np.memmap)
+    assert not second.csi.flags.owndata  # mapped from the cache file, not read into memory
     assert not second.csi.flags.writeable
     assert second.meta.source_sha256 == first.meta.source_sha256
     np.testing.assert_array_equal(first.csi, second.csi)

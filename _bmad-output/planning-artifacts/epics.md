@@ -153,6 +153,8 @@ The researcher can add WavesFM, Mantis-8M and an ImageNet model as rows in the s
 
 **Remaining order** (sprint-change-proposal-2026-11-02): Story 4.5 → Story 6.2 → Story 6.3 → Story 6.4 → Epic 7. Story 4.5 goes first so no further sweep is selected on the in-sample val score. The Epic 6 stories were renumbered on 2026-11-05 so numbers follow execution order (old 6.3 → 6.2, old 6.4 → 6.3, old 6.2 → 6.4); that proposal still uses the old numbers.
 
+**Remaining order** (sprint-change-proposal-2026-11-10): Story 6.5 → Story 6.6 → Story 6.7 → Epic 7. LWM is scored on Padova and CSI-Bench before the other pretrained models, so Epic 7 adds rows to tables that already hold LWM on every dataset. Story 6.5 (device option, cache race fix) comes first because 6.7's embedding cost depends on it; 6.6 commits the long-window plans 6.7 uses.
+
 ## Epic 1: Reproducible dataset access
 
 The researcher can load all 19 own recordings, generate the committed time-block split, and inspect counts per recording, class, room and split with `describe`.
@@ -769,7 +771,7 @@ So that LWM gets rows in the same table.
 
 ## Epic 6: Public datasets (activity recognition)
 
-The researcher can rerun the study on the supervisor-verified activity-recognition datasets (verified 2026-10-08) by adding only their loaders. Padova 80 MHz comes first, as the likely easiest import, followed by its cross-room and SHARP-comparable runs; CSI-Bench follows.
+The researcher can rerun the study on the supervisor-verified activity-recognition datasets (verified 2026-10-08) by adding only their loaders. Padova 80 MHz comes first, as the likely easiest import, followed by its cross-room and SHARP-comparable runs; CSI-Bench follows. Long-window runs (1, 2, 3, 5 s) and frozen LWM then cover both public datasets, with a runner device option so LWM embedding can use a GPU.
 
 ### Story 6.1: Padova 80 MHz loader
 
@@ -860,6 +862,73 @@ So that the study covers a large multi-device benchmark too.
 **And** `git diff` shows no change outside `adapters/datasets/`, `splits/` and `experiments/`
 
 **Format confirmed 2026-11-02 (recorded here so the story does not stop on its rule).** Use `Multitask/sub_Human_mat/` (`csi_trace.csi`, complex128, `[tx, rx, subcarriers, packets]`, plus `mactimer`). The H5 files are amplitude-only and are not used. There are 1,778 HAR files, 5 classes (`walking-case1`–`4` merge into `walking`), environments E01–E06 and E27 as rooms, and no empty class. No file has non-finite values, all-zero packets or all-zero subcarriers. Scope for this story: the HP devices (438 files, 2×2×58, about 122 Hz), using `tx0` with `rx0` and `rx1` as antennas `[0, 1]`, as adapter `csi_bench_hp`. The 1×4×14 devices are a later, separate adapter. Exclude `EightreePlug` (bursty timing) and the 6 files under 1,000 packets. Do not use `mactimer` for timing. The story must confirm the antenna pairing across more than the one file sampled so far, and check whether `paper_beamforming`, `amplitude_stats` and LWM accept 58 subcarriers.
+
+### Story 6.5: Device option and parallel-safe dataset cache
+
+As a researcher,
+I want LWM embedding on a GPU (MPS or CUDA) and dataset caches that survive parallel sweeps,
+So that the public-dataset LWM runs finish in hours, not days.
+
+**Acceptance Criteria:**
+
+**Given** `--device cpu|mps|cuda` or `CSI_BENCH_DEVICE` (default `cpu`)
+**When** a run starts
+**Then** the runner sets the device and records it in provenance, adapters never choose it, and `run_id` does not include it
+
+**Given** the LWM per-packet embedding cache
+**Then** its key includes the device, so CPU and GPU embeddings are never mixed
+
+**Given** the same config on one device
+**When** it is rerun
+**Then** it reproduces the same metrics; across devices only `run_id` is guaranteed equal, and this is documented
+
+**Given** the torch sources in `pyproject.toml`
+**Then** CPU stays the default, macOS wheels provide MPS, and Linux can select a CUDA index
+
+**Given** two sweep processes loading `csi_bench_hp` (and `padova`) at the same time
+**When** both convert or open the same cache entry
+**Then** no run fails with `cache file unreadable`, and a test reproduces the race before the fix
+
+### Story 6.6: Padova long-window plan and classical baseline
+
+As a researcher,
+I want Padova scored at 1, 2, 3 and 5 s windows,
+So that it matches the CSI-Bench long-window runs and the LWM long-window rows have a classical comparison.
+
+**Acceptance Criteria:**
+
+**Given** the `padova` adapter
+**Then** a `time_block` plan (fractions 0.6/0.2/0.2, `gap_packets` 865) is committed under `splits/padova/`
+
+**Given** `experiments/padova_long_windows.yaml`, the Padova classical grid with `window_len` [173, 346, 519, 865], stride window/2 and the 3 rooms
+**When** `sweep` and then `report` run
+**Then** the runs appear in their own section (`padova / time_block, gap_packets 865`)
+
+**Given** the CSI-Bench long-window runs made on the Mac (commit `05237c4`)
+**Then** their YAML and plan `d6b97e4f25b3` are committed with an expansion test, and `report` shows their section
+
+### Story 6.7: LWM on Padova and CSI-Bench
+
+As a researcher,
+I want frozen LWM rows for Padova and CSI-Bench,
+So that the LWM-vs-classical comparison covers every dataset before Epic 7.
+
+**Acceptance Criteria:**
+
+**Given** the shared reduced grid (presets `lwm_rescale_phase` and `lwm_amplitude`, embedding `cls`, pooler `mean_std`, heads `svm`, `mlp` and `logreg`, seed 0, `role: comparison`, `feature_selection: null`), justified by the `tor_vergata` medians in sprint-change-proposal-2026-11-10
+**Then** these sweeps exist, each with a header giving its run count, stride rule and why each grid value was kept, and an expansion test:
+
+| File | Dataset and plan | Antennas | Windows and stride | Columns | Runs |
+|---|---|---|---|---|---|
+| `experiments/padova_lwm.yaml` | `padova`, `time_block` `b6010d87ce4d` (gap 64) and `room_holdout` `725a12be6b83`, `99d235eb2f0e` | `ant2`, `ant4` | 10, 30, 50; stride 9 | 3 rooms + 2 directions | 180 |
+| `experiments/padova_lwm_long.yaml` | `padova`, the Story 6.6 plan (gap 865) | `ant2`, `ant4` | 173, 346, 519, 865; stride window/2 | 3 rooms | 144 |
+| `experiments/padova_sharp_lwm.yaml` | `padova_sharp`, `7640fb8ad320` (gap 346) | `ant2`, `ant4` | 346 and 50 (control, as in Story 6.3) | S1 | 24 |
+| `experiments/csi_bench_hp_lwm.yaml` | `csi_bench_hp`, `d6b97e4f25b3` | `ant2` | 122, 244, 366, 610; stride window/2 | 7 rooms + all 7 pooled | 192 |
+
+**When** the sweeps and then `report` run
+**Then** each (dataset, protocol) section shows the LWM rows next to the classical rows, with confidence intervals
+
+`room_holdout` uses short windows only, because its plans have gap 64 and the gap must exceed the window. CSI-Bench uses long windows only, because its short-window classical runs are incomplete.
 
 ## Epic 7: Other pretrained models
 

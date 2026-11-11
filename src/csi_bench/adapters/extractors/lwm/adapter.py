@@ -3,6 +3,7 @@
 Each packet `(antennas, subcarriers)` becomes 4x4 complex patches (real/imag interleaved, rows
 zero-padded to 4 by the vendored `patch_maker`), a CLS token is prepended and the frozen model's
 CLS output or the mean of its patch outputs is returned. Pooling and caching belong to the runner.
+The model runs on the runner's default torch device; embeddings come back as CPU float32.
 """
 
 import hashlib
@@ -132,21 +133,26 @@ class LWM:
         return tuple(f"lwm.{self.params.embedding}.{i}" for i in range(D_MODEL))
 
     def _get_model(self) -> torch.nn.Module:
+        """The frozen model on the runner's device (`torch.get_default_device()`)."""
+        device = torch.get_default_device()
         if self._model is None:
-            self._model = load_model()
+            self._model = load_model().to(device)
+        elif next(self._model.parameters()).device != device:
+            self._model = self._model.to(device)
         return self._model
 
     def _embed(self, model: torch.nn.Module, packets: np.ndarray) -> np.ndarray:
         """`packets`: complex64 `(n, antennas, subcarriers)` -> float32 `(n, 128)`."""
         patches = patch_maker(packets[:, None], PATCH_ROWS, PATCH_COLS)
         cls = np.full((len(patches), 1, ELEMENT_LENGTH), CLS_VALUE, dtype=np.float32)
-        tokens = torch.from_numpy(np.concatenate([cls, patches], axis=1))
+        device = next(model.parameters()).device
+        tokens = torch.from_numpy(np.concatenate([cls, patches], axis=1)).to(device)
         output, _ = model(tokens)
         if self.params.embedding == "cls":
             pooled = output[:, 0]
         else:
             pooled = output[:, 1:].mean(dim=1)
-        return pooled.numpy().astype(np.float32, copy=False)
+        return pooled.cpu().numpy().astype(np.float32, copy=False)
 
     def extract_packets(self, csi: np.ndarray) -> PacketFeatures:
         csi = _validate(csi)

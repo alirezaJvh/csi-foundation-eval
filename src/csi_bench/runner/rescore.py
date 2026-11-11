@@ -28,7 +28,15 @@ from csi_bench.runner.report import (
     _read_scores,
     _section_key,
 )
-from csi_bench.runner.run import DEFAULT_CACHE_ROOT, _execute, _git, resolve_workers
+from csi_bench.runner.run import (
+    DEFAULT_CACHE_ROOT,
+    DEFAULT_DEVICE,
+    _execute,
+    _git,
+    recorded_device,
+    resolve_device,
+    resolve_workers,
+)
 
 DEFAULT_BACKUP = "results/metrics-before-4-5"
 _BACKED_UP = (rs.METRICS_FILE, rs.PROVENANCE_FILE, "seeds/*/predictions.parquet")
@@ -95,11 +103,14 @@ def rescore_runs(
     cache_root: str | Path = DEFAULT_CACHE_ROOT,
     workers: int | str | None = None,
     allow_dirty: bool = False,
+    device: str | None = None,
 ) -> int:
     """Back up, then rerun one at a time every run lacking the score.
 
     A scored run made on a dirty tree is rerun too when the tree is clean, so an edit during
-    the rescore costs only the runs it touched.
+    the rescore costs only the runs it touched. Each run is rerun on the device recorded in
+    its provenance (`cpu` when none is); an explicit `device` overrides that for every run,
+    and `CSI_BENCH_DEVICE` is ignored here.
 
     Exit code: 0 all fine, 1 some run failed or was refused, 2 nothing was rerun because of a
     bad argument, no runs under `root`, a dirty tree or a failed backup.
@@ -107,6 +118,7 @@ def rescore_runs(
     root, backup = Path(root), Path(backup)
     try:
         count = resolve_workers(workers)
+        chosen = None if device is None else resolve_device(device)
         _check_backup(root, backup)
         discover()
     except (ImportError, ConfigError) as e:
@@ -148,8 +160,18 @@ def rescore_runs(
             recomputed = compute_run_id(config)
             if recomputed != run_id:
                 raise ConfigError(f"recomputed run_id {recomputed} differs from its directory")
+            run_device = chosen or resolve_device(recorded_device(run_id, root) or DEFAULT_DEVICE)
             began = time.monotonic()
-            _execute(config, config_file, run_id, root, cache_root, force=True, workers=count)
+            _execute(
+                config,
+                config_file,
+                run_id,
+                root,
+                cache_root,
+                force=True,
+                workers=count,
+                device=run_device,
+            )
         except Exception as e:  # noqa: BLE001 - one failed run must not stop the rescore
             sys.stderr.write(f"error: {run_id}: {e}\n")
             sys.stdout.write(f"[{position}/{len(paths)}] {run_id} failed\n")

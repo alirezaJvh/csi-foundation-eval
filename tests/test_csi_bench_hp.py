@@ -180,7 +180,7 @@ def test_cache_hit_and_reconvert_on_change(tmp_path, monkeypatch):
     monkeypatch.setattr(csi_bench_hp, "loadmat", boom)
     monkeypatch.setattr(Path, "read_bytes", boom)
     second = _load(tmp_path)[0]
-    assert isinstance(second.csi, np.memmap)
+    assert not second.csi.flags.owndata  # mapped from the cache file, not read into memory
     assert not second.csi.flags.writeable
     assert second.meta.source_sha256 == first.meta.source_sha256
     np.testing.assert_array_equal(first.csi, second.csi)
@@ -251,9 +251,10 @@ def test_real_dataset():
     rel = first.recording_id.split("/", 1)[1]
     raw = loadmat(REAL / f"{rel}.mat")["csi_trace"][0, 0]["csi"]
     np.testing.assert_array_equal(first.csi, raw[0].transpose(0, 2, 1).astype(np.complex64))
-    # gap 64: csi_bench_hp_classical_baseline.yaml; gap 610: csi_bench_hp_long_windows.yaml
-    for gap in (64, 610):
-        plan = TimeBlock(TimeBlock.Params(gap_packets=gap)).split(recs, "csi_bench_hp")
-        committed = COMMITTED / f"{plan.split_hash}.json"
-        assert committed.is_file(), f"generate with write_split_plan: {committed}"
-        assert load_split_plan(committed, recs) == plan
+    plan = TimeBlock().split(recs, "csi_bench_hp")
+    committed = COMMITTED / f"{plan.split_hash}.json"
+    assert committed.is_file(), f"generate with write_split_plan: {committed}"
+    assert load_split_plan(committed, recs) == plan
+    long = TimeBlock(TimeBlock.Params(gap_packets=610)).split(recs, "csi_bench_hp")
+    assert long.split_hash == "d6b97e4f25b3"  # the Mac long-window plan (commit 05237c4)
+    assert load_split_plan(COMMITTED / "d6b97e4f25b3.json", recs) == long

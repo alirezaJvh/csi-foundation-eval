@@ -162,3 +162,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-3-padova-sharp-comparable-run.md`
   summary: The leakage table reads only the plain `(dataset, "time_block")` section, so comparison runs on a non-default-gap `time_block` plan never feed it, and no test pins which plan the leakage side uses.
   evidence: `runner/report.py` leakage block uses `sections.get((dataset, "time_block"))` after `_section_key` moved gap-N rows; unreachable today (only tor_vergata has `random_window`, all its block plans are gap 64); settle with a test once a dataset has both a `random_window` plan and a non-default-gap block plan.
+
+## Deferred from: code review of spec-6-5-device-option-and-parallel-safe-dataset-cache.md (2026-11-10)
+
+- Unverified, would be medium: fork pools (`_extract_parallel`, block-context pool in `src/csi_bench/runner/run.py`) fork after LWM has initialized CUDA/MPS in the same process (a sweep running an LWM config on `--device mps|cuda`, then a forked `--workers > 1` config). The accelerator runtime's native threads are invisible to `_fork_is_safe`, and macOS Metal/ObjC is fork-unsafe. Settle with such a sweep on the Mac (`--device mps --workers 4`).

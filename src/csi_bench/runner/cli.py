@@ -20,6 +20,20 @@ from csi_bench.runner.report import DEFAULT_REFERENCE, report
 from csi_bench.runner.rescore import DEFAULT_BACKUP, rescore_report, rescore_runs
 from csi_bench.runner.run import run, run_sweep
 
+_CUDA_SETUP = (
+    "cuda needs `uv sync --group cuda --no-group cpu`, then `uv run --no-sync` (or "
+    "UV_NO_SYNC=1) on Linux, as a plain `uv run` reinstalls the cpu wheels"
+)
+_DEVICE_HELP = (
+    "torch device for LWM embedding: cpu, mps or cuda (default: $CSI_BENCH_DEVICE or cpu); "
+    f"{_CUDA_SETUP}. Not part of run_id: the same device reproduces metrics, other devices "
+    "may differ slightly. A run already finished on another device is kept, with a warning"
+)
+_RESCORE_DEVICE_HELP = (
+    "torch device for every rerun: cpu, mps or cuda (default: each run's recorded device; "
+    f"$CSI_BENCH_DEVICE is ignored); {_CUDA_SETUP}"
+)
+
 _COUNTS = ("n_packets", *PARTS)
 _SCOPE_RECORDING, _SCOPE_CLASS, _SCOPE_ROOM, _SCOPE_TOTAL = SCOPES
 
@@ -126,6 +140,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--workers",
         help="worker processes/threads (default: $CSI_BENCH_WORKERS or min(4, CPU count))",
     )
+    r.add_argument("--device", help=_DEVICE_HELP)
     w = sub.add_parser("sweep", help="expand a sweep file and run every config sequentially")
     w.add_argument("file", help="path to a base config YAML with a `sweep:` block")
     w.add_argument("--force", action="store_true", help="re-execute every run")
@@ -133,6 +148,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--workers",
         help="worker processes/threads (default: $CSI_BENCH_WORKERS or min(4, CPU count))",
     )
+    w.add_argument("--device", help=_DEVICE_HELP)
     p = sub.add_parser("report", help="refresh runs/index.parquet and print the comparison table")
     p.add_argument("--runs", default="runs", help="results directory")
     p.add_argument("--all-variants", action="store_true", help="list every run's variant")
@@ -155,6 +171,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--workers",
         help="worker processes/threads (default: $CSI_BENCH_WORKERS or min(4, CPU count))",
     )
+    s.add_argument("--device", help=_RESCORE_DEVICE_HELP)
     s.add_argument("--allow-dirty", action="store_true", help="run on a dirty tree (samples only)")
     c = sub.add_parser(
         "rescore-report",
@@ -171,14 +188,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SystemExit as e:
         return e.code if isinstance(e.code, int) else 2
     if args.command == "run":
-        return run(args.config, workers=args.workers)
+        return run(args.config, workers=args.workers, device=args.device)
     if args.command == "sweep":
-        return run_sweep(args.file, args.force, workers=args.workers)
+        return run_sweep(args.file, args.force, workers=args.workers, device=args.device)
     if args.command == "migrate-runs":
         return migrate_runs(args.runs)
     if args.command == "rescore-runs":
         return rescore_runs(
-            args.runs, args.backup, workers=args.workers, allow_dirty=args.allow_dirty
+            args.runs,
+            args.backup,
+            workers=args.workers,
+            allow_dirty=args.allow_dirty,
+            device=args.device,
         )
     if args.command == "rescore-report":
         return rescore_report(args.runs, args.backup, args.out, allow_dirty=args.allow_dirty)

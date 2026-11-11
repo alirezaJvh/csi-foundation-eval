@@ -31,6 +31,13 @@ dev = [
     "matplotlib==3.11.2",
     "ipykernel==7.4.0",
 ]
+# Which torch wheels: `cpu` is a default group (on macOS its wheels include MPS); `cuda`
+# selects the cu126 wheels on Linux for `--device cuda`:
+#   uv sync --group cuda --no-group cpu
+# then run with `uv run --no-sync csi-bench ...` or set UV_NO_SYNC=1 (a plain `uv run`
+# re-syncs the cpu group).
+cpu = ["torch==2.14.1", "torchvision==0.29.1"]
+cuda = ["torch==2.14.1", "torchvision==0.29.1"]
 
 [build-system]
 requires = ["hatchling"]
@@ -42,14 +49,27 @@ packages = ["src/csi_bench"]
 [tool.uv]
 required-version = ">=0.11"
 override-dependencies = ["pandas==3.0.6"]
+default-groups = ["dev", "cpu"]
+conflicts = [[{ group = "cpu" }, { group = "cuda" }]]
 
 [tool.uv.sources]
-torch = { index = "pytorch-cpu" }
-torchvision = { index = "pytorch-cpu" }
+torch = [
+    { index = "pytorch-cpu", group = "cpu" },
+    { index = "pytorch-cu126", group = "cuda", marker = "sys_platform == 'linux'" },
+]
+torchvision = [
+    { index = "pytorch-cpu", group = "cpu" },
+    { index = "pytorch-cu126", group = "cuda", marker = "sys_platform == 'linux'" },
+]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
 [tool.ruff]
